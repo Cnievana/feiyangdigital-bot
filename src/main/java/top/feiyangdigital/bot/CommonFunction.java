@@ -234,7 +234,7 @@ public class CommonFunction {
                         if (lastName == null) {
                             lastName = "";
                         }
-                        if (newMemberIntoGroup.intoGroupNameCheck(sender, update.getMessage().getFrom().getId(), update.getMessage().getChatId(), groupInfoWithBLOBs, update.getMessage().getFrom().getFirstName(), lastName)) {
+                        if (newMemberIntoGroup.intoGroupNameCheck(sender, update.getMessage().getFrom().getId(), update.getMessage().getChatId(), groupInfoWithBLOBs, update.getMessage().getFrom().getFirstName(), lastName, null)) {
                             sender.execute(new DeleteMessage(update.getMessage().getChatId().toString(), update.getMessage().getMessageId()));
                             return;
                         }
@@ -296,7 +296,7 @@ public class CommonFunction {
                         KeywordsFormat keywordsFormat = new KeywordsFormat();
                         keywordsButtons.add("➕将Bot加入群组$$" + url);
                         keywordsButtons.add("❌关闭菜单##close");
-                        keywordsFormat.setReplyText("<b>GitHub地址：</b><b><a href='https://github.com/youshandefeiyang/feiyangdigital-bot'>点击查看</a></b>\n<b>官方群组：</b><b><a href='https://t.me/feiyangdigital'>点击加入</a></b>\n");
+                        keywordsFormat.setReplyText("<b>GitHub地址：</b><b><a href='https://github.com/Cnievana/feiyangdigital-bot'>点击查看</a></b>\n<b>官方群组：</b><b><a href='https://t.me/stonehd'>点击加入</a></b>\n");
                         keywordsFormat.setKeywordsButtons(keywordsButtons);
                         sender.execute((SendMessage) sendContent.createResponseMessage(update, keywordsFormat, "html"));
                     } else {

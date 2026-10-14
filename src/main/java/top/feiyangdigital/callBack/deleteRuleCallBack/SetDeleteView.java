@@ -31,7 +31,7 @@ public class SetDeleteView {
         deleteRuleCacheMap.updateUserMapping(userId, deleteRuleCacheMap.getGroupIdForUser(userId), deleteRuleCacheMap.getGroupNameForUser(userId), "candelete");
         List<String> keywordsButtons = new ArrayList<>();
         KeywordsFormat keywordsFormat = new KeywordsFormat();
-        keywordsButtons.add("🔎查看使用文档$$https://github.com/youshandefeiyang/feiyangdigital-bot");
+        keywordsButtons.add("🔎查看使用文档$$https://github.com/Cnievana/feiyangdigital-bot/blob/main/使用文档.md");
         keywordsButtons.add("◀️返回上一级##backToAutoReply");
         keywordsButtons.add("❌关闭菜单##closeMenu");
         keywordsFormat.setReplyText("当前群组：<b>" + deleteRuleCacheMap.getGroupNameForUser(userId) + "</b>\n当前群组ID：<b>" + deleteRuleCacheMap.getGroupIdForUser(userId) + "</b>\n当前可删除状态：<b>" + deleteRuleCacheMap.getDeleteKeywordFlagMap(userId) + "</b>\n⚡️请直接在输入框里输入删除的规则，\n将会根据输入的关键词找到对应的规则⚡️️");

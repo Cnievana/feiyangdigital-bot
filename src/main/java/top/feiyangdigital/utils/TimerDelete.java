@@ -5,12 +5,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
+import org.telegram.telegrambots.meta.api.methods.ParseMode;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.methods.send.SendVideo;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.bots.AbsSender;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import top.feiyangdigital.utils.groupCaptch.CaptchaManager;
@@ -20,6 +23,7 @@ import top.feiyangdigital.utils.ruleCacheMap.DeleteRuleCacheMap;
 
 import java.io.Serializable;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Date;
 
 @Component
@@ -144,6 +148,44 @@ public class TimerDelete {
                 deleteMessageByMessageIdDelay(sender, chatId, message.getMessageId(), notifyDelay);
             } catch (TelegramApiException e) {
                 // 如果您仍希望不论是否出现异常都发送提示，那么将发送提示的逻辑移至catch块外部
+            }
+        };
+        taskScheduler.schedule(task, Instant.now().plusSeconds(delayInSeconds));
+    }
+
+    /**
+     * 延迟 delayInSeconds 秒后，将「原验证消息」原地编辑为超时提示（同时清除验证按钮），
+     * 再于 deleteAfterSeconds 秒后删除这条被编辑过的消息（保持原「超时提示会自动消失」的观感）。
+     * <p>
+     * 与原 deleteMessageAndNotifyAfterDelay 的关键区别：
+     * 1）不再「先删原消息、再另发一条新通知」，而是直接在原消息上编辑，避免刷屏打扰群成员；
+     * 2）编辑发生在删除之前，消息内容先被替换，随后才被删除；
+     * 3）若原消息已不存在（例如用户已在超时前通过验证、原消息已被删除），
+     *    EditMessageText 会抛异常并被吞掉，后续清理与删除都不会执行，
+     *    因此不会对已验证用户误发「未验证 / 永久限制发言」提示。
+     */
+    public void editMessageAndNotifyAfterDelay(AbsSender sender, String chatId, Integer messageId, String text, Long userId, int delayInSeconds, int deleteAfterSeconds) {
+        Runnable task = () -> {
+            try {
+                if (messageId == null) {
+                    return;
+                }
+                // 显式传入空的 inline keyboard，用于清除原消息上的「管理员解禁 / 点击验证」按钮
+                InlineKeyboardMarkup emptyMarkup = new InlineKeyboardMarkup();
+                emptyMarkup.setKeyboard(new ArrayList<>());
+                EditMessageText editMessageText = new EditMessageText();
+                editMessageText.setChatId(chatId);
+                editMessageText.setMessageId(messageId);
+                editMessageText.setText(text);
+                editMessageText.setParseMode(ParseMode.HTML);
+                editMessageText.setReplyMarkup(emptyMarkup);
+                sender.execute(editMessageText);
+                // 编辑成功后再清理验证缓存，并安排稍后删除这条提示消息
+                captchaManager.clearMappingsForUser(userId.toString());
+                captchaManagerCacheMap.clearMappingsForUser(userId.toString(), chatId);
+                deleteMessageByMessageIdDelay(sender, chatId, messageId, deleteAfterSeconds);
+            } catch (TelegramApiException e) {
+                // 原消息可能已被删除（例如用户已通过验证），此时不做任何处理，避免误报超时
             }
         };
         taskScheduler.schedule(task, Instant.now().plusSeconds(delayInSeconds));

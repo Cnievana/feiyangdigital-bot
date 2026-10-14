@@ -36,3 +36,10 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### 本地部署配置（含 bot token / API key，勿提交）###
+deploy/config.json
+
+### 本地部署脚本与文件（个人环境专用，勿提交）###
+deploy/
+.gitattributes

@@ -32,9 +32,9 @@ public class SetGroupSettingView {
         List<String> keywordsButtons = new ArrayList<>();
         KeywordsFormat keywordsFormat = new KeywordsFormat();
         keywordsButtons.add("🔑进群验证设置##changeGroupCheckStatus%%🎉是/否设置进群欢迎词##changeGroupWelcomeStatus");
-        keywordsButtons.add("🔍是/否进群昵称违规检测##changeIntoGroupUserNameCheckStatus%%◀️返回主菜单##backMainMenu");
-        keywordsButtons.add("❌关闭菜单##closeMenu");
-        keywordsFormat.setReplyText("当前群组：<b>" + addRuleCacheMap.getGroupNameForUser(userId) + "</b>\n当前群组ID：<b>" + addRuleCacheMap.getGroupIdForUser(userId) + "</b>\n当前群组验证状态：<b>" + groupInfoWithBLOBs.getIntogroupcheckflag() + "</b>\n当前进群欢迎状态：<b>" + groupInfoWithBLOBs.getIntogroupwelcomeflag() + "</b>\n当前进群昵称验证状态：<b>" + groupInfoWithBLOBs.getIntogroupusernamecheckflag() + "</b>\n⚡️请选择一个操作!⚡️");
+        keywordsButtons.add("🔍是/否进群昵称违规检测##changeIntoGroupUserNameCheckStatus%%🤖是/否AI进群昵称/简介检测##changeIntoGroupAiCheckStatus");
+        keywordsButtons.add("◀️返回主菜单##backMainMenu%%❌关闭菜单##closeMenu");
+        keywordsFormat.setReplyText("当前群组：<b>" + addRuleCacheMap.getGroupNameForUser(userId) + "</b>\n当前群组ID：<b>" + addRuleCacheMap.getGroupIdForUser(userId) + "</b>\n当前群组验证状态：<b>" + groupInfoWithBLOBs.getIntogroupcheckflag() + "</b>\n当前进群欢迎状态：<b>" + groupInfoWithBLOBs.getIntogroupwelcomeflag() + "</b>\n当前进群昵称验证状态：<b>" + groupInfoWithBLOBs.getIntogroupusernamecheckflag() + "</b>\n当前AI进群昵称/简介检测状态：<b>" + groupInfoService.selIntoGroupAiCheckFlag(addRuleCacheMap.getGroupIdForUser(userId)) + "</b>\n⚡️请选择一个操作!⚡️");
         keywordsFormat.setKeywordsButtons(keywordsButtons);
         sender.execute(sendContent.editResponseMessage(update, keywordsFormat, "html"));
     }
@@ -61,11 +61,40 @@ public class SetGroupSettingView {
         List<String> keywordsButtons = new ArrayList<>();
         KeywordsFormat keywordsFormat = new KeywordsFormat();
         keywordsButtons.add("🔑进群验证设置##changeGroupCheckStatus%%🎉设置进群欢迎词##changeGroupWelcomeStatus");
-        keywordsButtons.add("🔍进群昵称违规检测##changeIntoGroupUserNameCheckStatus%%◀️返回主菜单##backMainMenu");
-        keywordsButtons.add("❌关闭菜单##closeMenu");
-        keywordsFormat.setReplyText(text + "\n当前群组：<b>" + addRuleCacheMap.getGroupNameForUser(userId) + "</b>\n当前群组ID：<b>" + addRuleCacheMap.getGroupIdForUser(userId) + "</b>\n当前群组验证状态：<b>" + groupInfoWithBLOBs.getIntogroupcheckflag() + "</b>\n当前进群欢迎状态：<b>" + groupInfoWithBLOBs.getIntogroupwelcomeflag() + "</b>\n当前进群昵称验证状态：<b>" + intoGroupUserNameCheck + "</b>\n⚡️请选择一个操作!⚡️");
+        keywordsButtons.add("🔍进群昵称违规检测##changeIntoGroupUserNameCheckStatus%%🤖是/否AI进群昵称/简介检测##changeIntoGroupAiCheckStatus");
+        keywordsButtons.add("◀️返回主菜单##backMainMenu%%❌关闭菜单##closeMenu");
+        keywordsFormat.setReplyText(text + "\n当前群组：<b>" + addRuleCacheMap.getGroupNameForUser(userId) + "</b>\n当前群组ID：<b>" + addRuleCacheMap.getGroupIdForUser(userId) + "</b>\n当前群组验证状态：<b>" + groupInfoWithBLOBs.getIntogroupcheckflag() + "</b>\n当前进群欢迎状态：<b>" + groupInfoWithBLOBs.getIntogroupwelcomeflag() + "</b>\n当前进群昵称验证状态：<b>" + intoGroupUserNameCheck + "</b>\n当前AI进群昵称/简介检测状态：<b>" + groupInfoService.selIntoGroupAiCheckFlag(addRuleCacheMap.getGroupIdForUser(userId)) + "</b>\n⚡️请选择一个操作!⚡️");
         keywordsFormat.setKeywordsButtons(keywordsButtons);
         sender.execute(sendContent.editResponseMessage(update, keywordsFormat, "html"));
+    }
+
+    /**
+     * 切换「AI进群昵称/简介检测」开关。
+     * 打开后，新成员入群时会用 AI 判定其昵称与个人简介，判定为广告则直接永久限制、跳过验证。
+     */
+    public void changeIntoGroupAiCheckStatus(AbsSender sender, Update update) throws TelegramApiException {
+        String userId = update.getCallbackQuery().getFrom().getId().toString();
+        String chatId = addRuleCacheMap.getGroupIdForUser(userId);
+        String current = groupInfoService.selIntoGroupAiCheckFlag(chatId);
+        String newStatus;
+        String text;
+        if ("open".equals(current)) {
+            newStatus = "close";
+            text = "❗️AI进群昵称/简介检测已关闭";
+        } else {
+            newStatus = "open";
+            text = "✅AI进群昵称/简介检测已打开";
+        }
+        if (groupInfoService.updateIntoGroupAiCheckFlag(chatId, newStatus)) {
+            List<String> keywordsButtons = new ArrayList<>();
+            KeywordsFormat keywordsFormat = new KeywordsFormat();
+            keywordsButtons.add("🔑进群验证设置##changeGroupCheckStatus%%🎉是/否设置进群欢迎词##changeGroupWelcomeStatus");
+            keywordsButtons.add("🔍是/否进群昵称违规检测##changeIntoGroupUserNameCheckStatus%%🤖是/否AI进群昵称/简介检测##changeIntoGroupAiCheckStatus");
+            keywordsButtons.add("◀️返回主菜单##backMainMenu%%❌关闭菜单##closeMenu");
+            keywordsFormat.setReplyText(text + "\n当前群组：<b>" + addRuleCacheMap.getGroupNameForUser(userId) + "</b>\n当前群组ID：<b>" + chatId + "</b>\n当前进群昵称验证状态：<b>" + groupInfoService.selAllByGroupId(chatId).getIntogroupusernamecheckflag() + "</b>\n当前AI进群昵称/简介检测状态：<b>" + newStatus + "</b>\n⚡️请选择一个操作!⚡️");
+            keywordsFormat.setKeywordsButtons(keywordsButtons);
+            sender.execute(sendContent.editResponseMessage(update, keywordsFormat, "html"));
+        }
     }
 
     public void changeGroupWelcomeStatus(AbsSender sender, Update update) throws TelegramApiException {
@@ -90,9 +119,9 @@ public class SetGroupSettingView {
         List<String> keywordsButtons = new ArrayList<>();
         KeywordsFormat keywordsFormat = new KeywordsFormat();
         keywordsButtons.add("🔑进群验证设置##changeGroupCheckStatus%%🎉设置进群欢迎词##changeGroupWelcomeStatus");
-        keywordsButtons.add("🔍进群昵称违规检测##changeIntoGroupUserNameCheckStatus%%◀️返回主菜单##backMainMenu");
-        keywordsButtons.add("❌关闭菜单##closeMenu");
-        keywordsFormat.setReplyText(text + "\n当前群组：<b>" + addRuleCacheMap.getGroupNameForUser(userId) + "</b>\n当前群组ID：<b>" + addRuleCacheMap.getGroupIdForUser(userId) + "</b>\n当前群组验证状态：<b>" + groupInfoWithBLOBs.getIntogroupcheckflag() + "</b>\n当前进群欢迎状态：<b>" + intoGroupWelcome + "</b>\n当前进群昵称验证状态：<b>" + groupInfoWithBLOBs.getIntogroupusernamecheckflag() + "</b>\n⚡️请选择一个操作!⚡️");
+        keywordsButtons.add("🔍进群昵称违规检测##changeIntoGroupUserNameCheckStatus%%🤖是/否AI进群昵称/简介检测##changeIntoGroupAiCheckStatus");
+        keywordsButtons.add("◀️返回主菜单##backMainMenu%%❌关闭菜单##closeMenu");
+        keywordsFormat.setReplyText(text + "\n当前群组：<b>" + addRuleCacheMap.getGroupNameForUser(userId) + "</b>\n当前群组ID：<b>" + addRuleCacheMap.getGroupIdForUser(userId) + "</b>\n当前群组验证状态：<b>" + groupInfoWithBLOBs.getIntogroupcheckflag() + "</b>\n当前进群欢迎状态：<b>" + intoGroupWelcome + "</b>\n当前进群昵称验证状态：<b>" + groupInfoWithBLOBs.getIntogroupusernamecheckflag() + "</b>\n当前AI进群昵称/简介检测状态：<b>" + groupInfoService.selIntoGroupAiCheckFlag(addRuleCacheMap.getGroupIdForUser(userId)) + "</b>\n⚡️请选择一个操作!⚡️");
         keywordsFormat.setKeywordsButtons(keywordsButtons);
         sender.execute(sendContent.editResponseMessage(update, keywordsFormat, "html"));
     }

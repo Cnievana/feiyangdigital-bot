@@ -56,4 +56,16 @@ public class GroupInfoService {
         return null;
     }
 
+    /** 读取「AI进群昵称/简介检测」开关，未设置时默认 close。 */
+    @Transactional(propagation = Propagation.NEVER)
+    public String selIntoGroupAiCheckFlag(String groupId){
+        String flag = groupInfoMapper.selectIntoGroupAiCheckFlag(groupId);
+        return flag == null ? "close" : flag;
+    }
+
+    /** 设置「AI进群昵称/简介检测」开关，返回是否成功。 */
+    public boolean updateIntoGroupAiCheckFlag(String groupId, String flag){
+        return groupInfoMapper.updateIntoGroupAiCheckFlag(groupId, flag) > 0;
+    }
+
 }
