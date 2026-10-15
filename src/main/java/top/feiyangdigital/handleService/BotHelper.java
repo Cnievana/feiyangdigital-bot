@@ -1,5 +1,6 @@
 package top.feiyangdigital.handleService;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -11,6 +12,8 @@ import org.telegram.telegrambots.meta.api.objects.chatmember.ChatMember;
 import org.telegram.telegrambots.meta.bots.AbsSender;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import top.feiyangdigital.callBack.CommonCallBack;
+import top.feiyangdigital.callBack.aiCsCallBack.DeleteAiCsPrompt;
+import top.feiyangdigital.callBack.aiCsCallBack.SetAiCsMenu;
 import top.feiyangdigital.callBack.deleteRuleCallBack.SetDeleteView;
 import top.feiyangdigital.callBack.groupSetting.SetGroupSettingView;
 import top.feiyangdigital.callBack.otherGroupSetting.NightModeAndReport;
@@ -34,6 +37,7 @@ import top.feiyangdigital.utils.ruleCacheMap.DeleteRuleCacheMap;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 public class BotHelper {
 
@@ -69,6 +73,12 @@ public class BotHelper {
 
     @Autowired
     private DeleteRuleCacheMap deleteRuleCacheMap;
+
+    @Autowired
+    private SetAiCsMenu setAiCsMenu;
+
+    @Autowired
+    private DeleteAiCsPrompt deleteAiCsPrompt;
 
     @Autowired
     private DeleteGropuRuleMap deleteGropuRuleMap;
@@ -119,17 +129,50 @@ public class BotHelper {
         keywordsButtons.add("📝规则设置##autoReply%%⚙️群组设置##groupSetting");
         keywordsButtons.add("🕐打开/关闭定时发送消息##cronOption%%🔮打开/关闭AI##aiOption");
         keywordsButtons.add("🌊防刷屏模式##antiFlood%%💎其他群组设置##otherGroupSetting");
-        keywordsButtons.add("👨🏻‍💻仓库地址$$https://github.com/Cnievana/feiyangdigital-bot%%👥官方群组$$https://t.me/stonehd");
+        keywordsButtons.add("☎️AI智能客服##aiCsMenu");
+        keywordsButtons.add("仓库地址$$https://github.com/Cnievana/feiyangdigital-bot%%官方群组$$https://t.me/stonehd");
         keywordsButtons.add("❌关闭菜单##closeMenu");
         keywordsFormat.setReplyText("当前群组：<b>" + addRuleCacheMap.getGroupNameForUser(userId) + "</b>\n当前群组ID：<b>" + addRuleCacheMap.getGroupIdForUser(userId) + "</b>\n当前可输入状态：<b>" + addRuleCacheMap.getKeywordsFlagForUser(userId) + "</b>\n当前定时发送消息状态：<b>" + addRuleCacheMap.getCrontabFlagForUser(userId) + "</b>\n当前AI状态：<b>" + addRuleCacheMap.getAiFlagForUser(userId) + "</b>\n⚡️请选择一个操作!⚡️");
         keywordsFormat.setKeywordsButtons(keywordsButtons);
         sender.execute((SendMessage) sendContent.createResponseMessage(update, keywordsFormat, "html"));
     }
 
+    /**
+     * 面板按钮点击时刷新当前群组的「设置有效期」（settingTimeStamp）。
+     * <p>
+     * 规则：**仅在尚未超时时续期**；已超时则不续期，会话保持失效，
+     * 必须回群里重新发送 /setbot 才能重新开始配置。
+     * <p>
+     * 这里刻意分两次调用（读 → 写）而不是封装成一个 service 方法，
+     * 是为了让 {@code @Cacheable} / {@code @Transactional} 都走代理，避免自调用导致注解失效。
+     * <p>
+     * 失败时只在日志记录，绝不影响面板本身的正常使用。
+     */
+    private void refreshSettingTimestamp(String userId) {
+        try {
+            String groupId = addRuleCacheMap.getGroupIdForUser(userId);
+            if (groupId == null) {
+                return;
+            }
+            if (GroupInfoService.isSettingExpired(groupInfoService.selAllByGroupId(groupId))) {
+                // 已超时：不续期，必须回群里重新发送 /setbot
+                return;
+            }
+            GroupInfoWithBLOBs record = new GroupInfoWithBLOBs();
+            record.setSettingtimestamp(String.valueOf(System.currentTimeMillis()));
+            groupInfoService.updateSelectiveByChatId(record, groupId);
+        } catch (Exception e) {
+            log.warn("刷新设置有效期失败：{}", e.getMessage());
+        }
+    }
+
     public void handleCallbackQuery(AbsSender sender, Update update) throws TelegramApiException {
         CallbackQuery callbackQuery = update.getCallbackQuery();
         String callbackData = callbackQuery.getData();
         if (callbackData == null || callbackData.isEmpty()) return;
+
+        // 面板按钮操作：未超时则重置有效期；已超时则不续期（需回群里重新发送 /setbot）
+        refreshSettingTimestamp(callbackQuery.getFrom().getId().toString());
 
         AnswerCallbackQuery answer = new AnswerCallbackQuery();
         answer.setCallbackQueryId(callbackQuery.getId());
@@ -215,6 +258,36 @@ public class BotHelper {
             case "aiOption":
                 commonCallBack.aiOption(sender, update);
                 return;
+            case "aiCsMenu":
+                setAiCsMenu.hadleCallBack(sender, update);
+                return;
+            case "aiCsToggle":
+                setAiCsMenu.toggleFlag(sender, update);
+                return;
+            case "aiCsPrivateToggle":
+                setAiCsMenu.togglePrivate(sender, update);
+                return;
+            case "aiCsTrigger":
+                setAiCsMenu.triggerMenu(sender, update);
+                return;
+            case "aiCsTriggerAt":
+                setAiCsMenu.setTrigger(sender, update, "at");
+                return;
+            case "aiCsTriggerKeyword":
+                setAiCsMenu.setTrigger(sender, update, "keyword");
+                return;
+            case "aiCsTriggerAll":
+                setAiCsMenu.setTrigger(sender, update, "all");
+                return;
+            case "aiCsSetKeyword":
+                setAiCsMenu.promptForKeyword(sender, update);
+                return;
+            case "aiCsAdd":
+                setAiCsMenu.addPrompt(sender, update);
+                return;
+            case "aiCsList":
+                deleteAiCsPrompt.listPrompts(sender, update);
+                return;
             case "cronOption":
                 commonCallBack.cronOption(sender, update);
                 return;
@@ -234,6 +307,12 @@ public class BotHelper {
                 timerDelete.deletePrivateUsualMessageImmediately(sender, update);
                 return;
             default:
+        }
+
+        // AI 客服：删除知识条目（回调数据形如 aiCsDel12）
+        if (callbackData.startsWith("aiCsDel")) {
+            deleteAiCsPrompt.deleteById(sender, update);
+            return;
         }
 
         if (callbackData.startsWith("adminUnrestrict")) {

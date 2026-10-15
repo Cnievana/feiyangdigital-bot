@@ -15,6 +15,7 @@ import org.telegram.telegrambots.meta.api.objects.messageorigin.MessageOriginCha
 import org.telegram.telegrambots.meta.api.objects.messageorigin.MessageOriginChat;
 import org.telegram.telegrambots.meta.bots.AbsSender;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+import top.feiyangdigital.callBack.aiCsCallBack.AddAiCsPrompt;
 import top.feiyangdigital.callBack.deleteRuleCallBack.DeleteSingleRuleByKeyWord;
 import top.feiyangdigital.callBack.replyRuleCallBack.AddAutoReplyRule;
 import top.feiyangdigital.entity.BaseInfo;
@@ -29,6 +30,7 @@ import top.feiyangdigital.utils.aiMessageCheck.AiCheckMedia;
 import top.feiyangdigital.utils.aiMessageCheck.AiCheckMessage;
 import top.feiyangdigital.utils.groupCaptch.*;
 import top.feiyangdigital.utils.ruleCacheMap.AddRuleCacheMap;
+import top.feiyangdigital.utils.ruleCacheMap.AiCsCacheMap;
 import top.feiyangdigital.utils.ruleCacheMap.DeleteRuleCacheMap;
 import top.feiyangdigital.wordCloud.MessageService;
 import top.feiyangdigital.wordCloud.WordCloudGenerator;
@@ -86,6 +88,15 @@ public class CommonFunction {
 
     @Autowired
     private DeleteSingleRuleByKeyWord deleteSingleRuleByKeyWord;
+
+    @Autowired
+    private AddAiCsPrompt addAiCsPrompt;
+
+    @Autowired
+    private AiCsCacheMap aiCsCacheMap;
+
+    @Autowired
+    private AiCustomerServiceHandler aiCustomerServiceHandler;
 
     @Autowired
     private CaptchaGenerator captchaGenerator;
@@ -244,6 +255,8 @@ public class CommonFunction {
                             return;
                         }
                         aiCheckMessage.checkMessage(sender, update);
+                        // AI 客服：放在规则/AI检测之后，避免抢走关键词回复
+                        aiCustomerServiceHandler.handleGroupMessage(sender, update);
                         clearOtherInfo.clearBotCommand(sender, update);
                         return;
                     }
@@ -305,8 +318,17 @@ public class CommonFunction {
                             addAutoReplyRule.addNewRule(sender, update);
                         } else if ("candelete".equals(deleteRuleCacheMap.getDeleteKeywordFlagMap(userId))) {
                             deleteSingleRuleByKeyWord.DeleteOption(sender, update);
+                        } else if ("addPrompt".equals(aiCsCacheMap.getFlagForUser(userId))) {
+                            // AI客服：正在输入知识条目
+                            addAiCsPrompt.addNewPrompt(sender, update);
+                        } else if ("setKeyword".equals(aiCsCacheMap.getFlagForUser(userId))) {
+                            // AI客服：正在输入触发关键词
+                            addAiCsPrompt.setKeyword(sender, update);
                         } else if (StringUtils.hasText(captchaManager.getAnswerForUser(userId))) {
                             captchaGenerator.answerReplyhandle(sender, update);
+                        } else {
+                            // 私聊 AI 客服（前提：管理员已绑定群组且该群已开启「💬私聊客服」）
+                            aiCustomerServiceHandler.handlePrivateMessage(sender, update);
                         }
                     }
 

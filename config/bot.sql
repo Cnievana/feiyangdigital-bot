@@ -60,6 +60,10 @@ CREATE TABLE `groupinfo`
     `intoGroupWelcomeFlag`       varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'close',
     `intoGroupUserNameCheckFlag` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'close',
     `intoGroupAiCheckFlag`       varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'close',
+    `aiCsFlag`                   varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'close',
+    `aiCsTriggerMode`            varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'at',
+    `aiCsKeyword`                varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci         DEFAULT NULL,
+    `aiCsPrivateFlag`            varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'close',
     `aiFlag`                     varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'close',
     `crontabFlag`                varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'close',
     `nightModeFlag`              varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'close',
@@ -69,6 +73,25 @@ CREATE TABLE `groupinfo`
     `antiFloodFlag`              varchar(50) COLLATE utf8mb4_general_ci                       NOT NULL DEFAULT 'close',
     `channelSpamFlag`            varchar(50) COLLATE utf8mb4_general_ci                       NOT NULL DEFAULT 'close',
     `backup`                     longtext COLLATE utf8mb4_general_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `ai_cs_prompt`
+-- AI 客服知识条目：一个群可配置多条，运行时按 sortOrder 拼接为 system prompt
+--
+
+CREATE TABLE `ai_cs_prompt`
+(
+    `id`              int                                                          NOT NULL AUTO_INCREMENT,
+    `groupId`         varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+    `title`           varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+    `prompt`          text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci        NOT NULL,
+    `sortOrder`       int                                                          NOT NULL DEFAULT '0',
+    `updateTimestamp` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci          DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `groupId` (`groupId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --

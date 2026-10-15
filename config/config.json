@@ -11,6 +11,9 @@
   },
   "openAIApiKey": [""],
   "openAIModel": "deepseek-v4-flash",
+  "openAIApiHost": "https://api.deepseek.com/",
+  "openAIThinking": "auto",
+  "openAIReasoningEffort": "",
   "api-server": "",
   "googleServiceAccount": {
     "type": "",

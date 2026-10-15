@@ -9,9 +9,12 @@ import com.unfbx.chatgpt.entity.chat.ResponseFormat;
 import com.unfbx.chatgpt.interceptor.DynamicKeyOpenAiAuthInterceptor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import top.feiyangdigital.entity.BaseInfo;
 import top.feiyangdigital.entity.DeepSeekChatCompletion;
 
+import javax.annotation.PostConstruct;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -65,13 +68,61 @@ public class OpenAiApiService {
             "只输出合法 json，不要任何多余文本。";
 
 
+    /**
+     * 启动时打印当前生效的 AI 配置，便于排错（日志级别 root=warn，故用 warn 输出）。
+     */
+    @PostConstruct
+    public void logApiConfig() {
+        log.warn("AI 配置已加载 -> apiHost={}, model={}, 实际请求地址={}v1/chat/completions, thinking={}, reasoning_effort={}",
+                BaseInfo.getOpenAiApiHost(), BaseInfo.getOpenAIModel(), BaseInfo.getOpenAiApiHost(),
+                shouldSendThinking() ? "发送" : "不发送",
+                StringUtils.hasText(BaseInfo.getOpenAiReasoningEffort()) ? BaseInfo.getOpenAiReasoningEffort() : "不发送");
+    }
+
+    /**
+     * 是否发送 DeepSeek 专有的 {@code thinking} 参数。
+     * <ul>
+     *     <li>{@code on} → 总是发送；</li>
+     *     <li>{@code off} → 从不发送；</li>
+     *     <li>{@code auto}（默认）→ 仅当 apiHost 是 DeepSeek 官方端点时才发送，避免第三方接口因无法识别而报错。</li>
+     * </ul>
+     */
+    private boolean shouldSendThinking() {
+        String mode = BaseInfo.getOpenAiThinking();
+        if ("on".equals(mode)) {
+            return true;
+        }
+        if ("off".equals(mode)) {
+            return false;
+        }
+        return BaseInfo.getOpenAiApiHost().toLowerCase().contains("deepseek");
+    }
+
+    /**
+     * 统一处理「思考」控制，两套字段按需下发：
+     * <ul>
+     *     <li>{@code thinking} —— DeepSeek 专有（关闭思考）；</li>
+     *     <li>{@code reasoning_effort} —— 其他 OpenAI 兼容网关（如 Command Code），
+     *         配置 {@code off} 可完全关闭思考；留空则不发送，避免不支持该字段的网关报错。</li>
+     * </ul>
+     */
+    private void applyReasoningControl(DeepSeekChatCompletion chatCompletion) {
+        if (shouldSendThinking()) {
+            chatCompletion.setThinking(Collections.singletonMap("type", "disabled"));
+        }
+        String effort = BaseInfo.getOpenAiReasoningEffort();
+        if (StringUtils.hasText(effort)) {
+            chatCompletion.setReasoningEffort(effort);
+        }
+    }
+
     private OpenAiClient createOpenAiClient() {
         List<String> list = BaseInfo.getOpenAIApiKey().toJavaList(String.class, JSONReader.Feature.SupportArrayToBean);
 
         return OpenAiClient.builder()
                 .apiKey(list)
                 .authInterceptor(new DynamicKeyOpenAiAuthInterceptor())
-                .apiHost("https://api.deepseek.com/")
+                .apiHost(BaseInfo.getOpenAiApiHost())
                 .build();
     }
 
@@ -102,6 +153,65 @@ public class OpenAiApiService {
         return Collections.emptyList();  // 当达到最大尝试次数时返回空列表
     }
 
+    /**
+     * AI 客服：依据 system prompt 与多轮历史生成一条自然语言回复。
+     * <p>
+     * 与 {@link #getOpenAiAnalyzeResult(String)} 的区别：不要求 JSON 输出、不使用 JSON_OBJECT，
+     * 并且只重试 2 次 + 指数退避（客服场景高频调用，激进重试会放大上游限流）。
+     *
+     * @param systemPrompt 由该群全部知识条目拼接而成的系统提示
+     * @param history      按时间顺序排列的消息（含本轮用户消息）
+     * @return 回复文本；失败时返回 null（调用方静默跳过，绝不影响群内其他功能）
+     */
+    public String getCustomerServiceReply(String systemPrompt, List<Message> history) {
+        final int MAX_RETRIES = 2;
+        int attempt = 0;
+        while (attempt < MAX_RETRIES) {
+            try {
+                ChatCompletion chatCompletion = createCustomerServiceCompletion(systemPrompt, history);
+                List<ChatChoice> choices = createOpenAiClient().chatCompletion(chatCompletion).getChoices();
+                if (isEmptyResult(choices)) {
+                    throw new IllegalStateException("AI客服返回内容为空");
+                }
+                return choices.get(0).getMessage().getContent();
+            } catch (Exception e) {
+                attempt++;
+                log.error("AI客服回复失败，尝试次数：{}，原因：{}", attempt, e.getMessage(), e);
+                if (attempt >= MAX_RETRIES) {
+                    return null;
+                }
+                try {
+                    // 退避重试，避免触发上游限流
+                    Thread.sleep(1000L * attempt);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    private ChatCompletion createCustomerServiceCompletion(String systemPrompt, List<Message> history) {
+        DeepSeekChatCompletion chatCompletion = new DeepSeekChatCompletion();
+        chatCompletion.setModel(BaseInfo.getOpenAIModel());
+        chatCompletion.setMaxTokens(1200);
+        chatCompletion.setTemperature(0.7);
+        chatCompletion.setTopP(1.0);
+        chatCompletion.setPresencePenalty(0);
+        chatCompletion.setFrequencyPenalty(0);
+        // 关闭思考模式：更快、更省 token（具体字段按接口地址/配置决定）
+        applyReasoningControl(chatCompletion);
+
+        List<Message> messages = new ArrayList<>();
+        messages.add(Message.builder().role(Message.Role.SYSTEM).content(systemPrompt).build());
+        if (history != null) {
+            messages.addAll(history);
+        }
+        chatCompletion.setMessages(messages);
+        return chatCompletion;
+    }
+
     private ChatCompletion createChatCompletion(Message message) {
         DeepSeekChatCompletion chatCompletion = new DeepSeekChatCompletion();
         chatCompletion.setModel(BaseInfo.getOpenAIModel());
@@ -110,7 +220,8 @@ public class OpenAiApiService {
         chatCompletion.setTopP(1.0);
         chatCompletion.setPresencePenalty(0);
         chatCompletion.setFrequencyPenalty(0);
-        chatCompletion.setThinking(Collections.singletonMap("type", "disabled"));
+        // 关闭思考模式：更快、更省 token（具体字段按接口地址/配置决定）
+        applyReasoningControl(chatCompletion);
         chatCompletion.setResponseFormat(
                 ResponseFormat.builder()
                         .type(ResponseFormat.Type.JSON_OBJECT.getName())

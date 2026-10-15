@@ -56,6 +56,55 @@ public class BaseInfo {
         return CONFIG.getJSONArray("openAIApiKey");
     }
 
+    /**
+     * AI 接口地址（OpenAI 兼容 base url，**必须带结尾斜杠**）。
+     * <p>
+     * 取值优先级：环境变量 {@code OPENAI_API_HOST} → config.json 的 {@code openAIApiHost} → DeepSeek 官方。
+     * 客户端会在该地址后拼接 {@code v1/chat/completions}。
+     */
+    public static String getOpenAiApiHost() {
+        String envHost = System.getenv("OPENAI_API_HOST");
+        if (envHost != null && !envHost.trim().isEmpty()) {
+            return envHost.trim();
+        }
+
+        String configHost = CONFIG.getString("openAIApiHost");
+        if (configHost != null && !configHost.trim().isEmpty()) {
+            return configHost.trim();
+        }
+
+        return "https://api.deepseek.com/";
+    }
+
+    /**
+     * 是否向接口发送 DeepSeek 专有的 {@code thinking} 参数。
+     * <p>
+     * 取值：{@code on} 总是发送 / {@code off} 从不发送 / {@code auto}（默认）仅当接口地址是 DeepSeek 时发送。
+     * 之所以要能关掉，是因为非 DeepSeek 的兼容接口可能因无法识别该字段而报错。
+     */
+    public static String getOpenAiThinking() {
+        String mode = CONFIG.getString("openAIThinking");
+        return (mode == null || mode.trim().isEmpty()) ? "auto" : mode.trim().toLowerCase();
+    }
+
+    /**
+     * 推理强度（reasoning effort），控制模型「思考」的力度。
+     * <p>
+     * 取值：{@code off} / {@code low} / {@code medium} / {@code high} / {@code xhigh} / {@code max}；
+     * **留空表示不发送该参数**（不同服务端支持的取值不同，以服务端返回的错误提示为准）。
+     * <p>
+     * 优先级：环境变量 {@code OPENAI_REASONING_EFFORT} → config.json 的 {@code openAIReasoningEffort}。
+     */
+    public static String getOpenAiReasoningEffort() {
+        String envEffort = System.getenv("OPENAI_REASONING_EFFORT");
+        if (envEffort != null && !envEffort.trim().isEmpty()) {
+            return envEffort.trim().toLowerCase();
+        }
+
+        String configEffort = CONFIG.getString("openAIReasoningEffort");
+        return (configEffort == null || configEffort.trim().isEmpty()) ? "" : configEffort.trim().toLowerCase();
+    }
+
     public static String getOpenAIModel() {
         String envModel = System.getenv("DEEPSEEK_MODEL");
         if (envModel != null && !envModel.trim().isEmpty()) {

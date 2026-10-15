@@ -47,7 +47,7 @@ public class AddAutoReplyRule {
                     GroupInfoWithBLOBs groupInfoWithBLOBs = groupInfoService.selAllByGroupId(addRuleCacheMap.getGroupIdForUser(userId));
                     String settingTimestamp = groupInfoWithBLOBs.getSettingtimestamp();
                     if (settingTimestamp != null && !settingTimestamp.isEmpty()) {
-                        if (System.currentTimeMillis() - Long.parseLong(settingTimestamp) > (15 * 60 * 1000)) {
+                        if (System.currentTimeMillis() - Long.parseLong(settingTimestamp) > GroupInfoService.SETTING_TIMEOUT_MS) {
                             sender.execute(sendContent.messageText(update, "本次设置超时，请去群里重新发送/setbot"));
                             addRuleCacheMap.updateUserMapping(userId, addRuleCacheMap.getGroupIdForUser(userId), addRuleCacheMap.getGroupNameForUser(userId), "notallow", addRuleCacheMap.getAiFlagForUser(userId), addRuleCacheMap.getCrontabFlagForUser(userId));
                         } else {

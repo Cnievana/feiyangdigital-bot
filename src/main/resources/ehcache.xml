@@ -29,4 +29,12 @@
             overflowToDisk="false"
             memoryStoreEvictionPolicy="LRU"
     />
+    <!-- 针对ai_cs_prompt表的缓存（AI客服知识条目） -->
+    <cache
+            name="aiCsPrompt"
+            maxElementsInMemory="10000"
+            eternal="true"
+            overflowToDisk="false"
+            memoryStoreEvictionPolicy="LRU"
+    />
 </ehcache>
