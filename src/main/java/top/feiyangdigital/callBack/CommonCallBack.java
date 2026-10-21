@@ -24,6 +24,9 @@ public class CommonCallBack {
     private SendContent sendContent;
 
     @Autowired
+    private PanelMenu panelMenu;
+
+    @Autowired
     private AddRuleCacheMap addRuleCacheMap;
 
     @Autowired
@@ -61,17 +64,10 @@ public class CommonCallBack {
                 schedulerService.clearJobsWithGroupPrefix("OnlySendMessagejob_" + groupInfoWithBLOBs.getGroupid());
             }
         }
-        List<String> keywordsButtons = new ArrayList<>();
-        KeywordsFormat keywordsFormat = new KeywordsFormat();
-        keywordsButtons.add("📝规则设置##autoReply%%⚙️群组设置##groupSetting");
-        keywordsButtons.add("🕐打开/关闭定时发送消息##cronOption%%🔮打开/关闭AI##aiOption");
-        keywordsButtons.add("🌊防刷屏模式##antiFlood%%💎其他群组设置##otherGroupSetting");
-        keywordsButtons.add("☎️AI智能客服##aiCsMenu");
-        keywordsButtons.add("仓库地址$$https://github.com/Cnievana/feiyangdigital-bot%%官方群组$$https://t.me/stonehd");
-        keywordsButtons.add("❌关闭菜单##closeMenu");
-        keywordsFormat.setReplyText(text + "\n当前群组：<b>" + addRuleCacheMap.getGroupNameForUser(userId) + "</b>\n当前群组ID：<b>" + addRuleCacheMap.getGroupIdForUser(userId) + "</b>\n当前可输入状态：<b>" + addRuleCacheMap.getKeywordsFlagForUser(userId) + "</b>\n当前定时发送消息状态：<b>" + crontabFlag + "</b>\n当前AI状态：<b>" + addRuleCacheMap.getAiFlagForUser(userId) + "</b>\n⚡️请选择一个操作!⚡️");
-        keywordsFormat.setKeywordsButtons(keywordsButtons);
         addRuleCacheMap.updateUserMapping(userId, addRuleCacheMap.getGroupIdForUser(userId), addRuleCacheMap.getGroupNameForUser(userId), addRuleCacheMap.getKeywordsFlagForUser(userId), addRuleCacheMap.getAiFlagForUser(userId), crontabFlag);
+        KeywordsFormat keywordsFormat = new KeywordsFormat();
+        keywordsFormat.setReplyText(text + "\n" + panelMenu.mainMenuText(userId));
+        keywordsFormat.setKeywordsButtons(panelMenu.mainMenuButtons());
         sender.execute(sendContent.editResponseMessage(update, keywordsFormat, "html"));
 
     }
@@ -96,32 +92,18 @@ public class CommonCallBack {
                 text = "❗智能AI监控已关闭";
             }
         }
-        List<String> keywordsButtons = new ArrayList<>();
-        KeywordsFormat keywordsFormat = new KeywordsFormat();
-        keywordsButtons.add("📝规则设置##autoReply%%⚙️群组设置##groupSetting");
-        keywordsButtons.add("🕐打开/关闭定时发送消息##cronOption%%🔮打开/关闭AI##aiOption");
-        keywordsButtons.add("🌊防刷屏模式##antiFlood%%💎其他群组设置##otherGroupSetting");
-        keywordsButtons.add("☎️AI智能客服##aiCsMenu");
-        keywordsButtons.add("仓库地址$$https://github.com/Cnievana/feiyangdigital-bot%%官方群组$$https://t.me/stonehd");
-        keywordsButtons.add("❌关闭菜单##closeMenu");
-        keywordsFormat.setReplyText(text + "\n当前群组：<b>" + addRuleCacheMap.getGroupNameForUser(userId) + "</b>\n当前群组ID：<b>" + addRuleCacheMap.getGroupIdForUser(userId) + "</b>\n当前可输入状态：<b>" + addRuleCacheMap.getKeywordsFlagForUser(userId) + "</b>\n当前定时发送消息状态：<b>" + addRuleCacheMap.getCrontabFlagForUser(userId) + "</b>\n当前AI状态：<b>" + aiFlag + "</b>\n⚡️请选择一个操作!⚡️");
-        keywordsFormat.setKeywordsButtons(keywordsButtons);
         addRuleCacheMap.updateUserMapping(userId, addRuleCacheMap.getGroupIdForUser(userId), addRuleCacheMap.getGroupNameForUser(userId), addRuleCacheMap.getKeywordsFlagForUser(userId), aiFlag, addRuleCacheMap.getCrontabFlagForUser(userId));
+        KeywordsFormat keywordsFormat = new KeywordsFormat();
+        keywordsFormat.setReplyText(text + "\n" + panelMenu.mainMenuText(userId));
+        keywordsFormat.setKeywordsButtons(panelMenu.mainMenuButtons());
         sender.execute(sendContent.editResponseMessage(update, keywordsFormat, "html"));
     }
 
     public void backMainMenu(AbsSender sender, Update update) throws TelegramApiException {
         String userId = update.getCallbackQuery().getFrom().getId().toString();
-        List<String> keywordsButtons = new ArrayList<>();
         KeywordsFormat keywordsFormat = new KeywordsFormat();
-        keywordsButtons.add("📝规则设置##autoReply%%⚙️群组设置##groupSetting");
-        keywordsButtons.add("🕐打开/关闭定时发送消息##cronOption%%🔮打开/关闭AI##aiOption");
-        keywordsButtons.add("🌊防刷屏模式##antiFlood%%💎其他群组设置##otherGroupSetting");
-        keywordsButtons.add("☎️AI智能客服##aiCsMenu");
-        keywordsButtons.add("仓库地址$$https://github.com/Cnievana/feiyangdigital-bot%%官方群组$$https://t.me/stonehd");
-        keywordsButtons.add("❌关闭菜单##closeMenu");
-        keywordsFormat.setReplyText("当前群组：<b>" + addRuleCacheMap.getGroupNameForUser(userId) + "</b>\n当前群组ID：<b>" + addRuleCacheMap.getGroupIdForUser(userId) + "</b>\n当前可输入状态：<b>" + addRuleCacheMap.getKeywordsFlagForUser(userId) + "</b>\n当前定时发送消息状态：<b>" + addRuleCacheMap.getCrontabFlagForUser(userId) + "</b>\n当前AI状态：<b>" + addRuleCacheMap.getAiFlagForUser(userId) + "</b>\n⚡️请选择一个操作!⚡️");
-        keywordsFormat.setKeywordsButtons(keywordsButtons);
+        keywordsFormat.setReplyText(panelMenu.mainMenuText(userId));
+        keywordsFormat.setKeywordsButtons(panelMenu.mainMenuButtons());
         sender.execute(sendContent.editResponseMessage(update, keywordsFormat, "html"));
     }
 }

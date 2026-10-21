@@ -46,8 +46,8 @@ public class KeywordFileSender {
         GroupInfoWithBLOBs groupInfoWithBLOBs = groupInfoService.selAllByGroupId(addRuleCacheMap.getGroupIdForUser(userId));
         String settingTimestamp = groupInfoWithBLOBs.getSettingtimestamp();
         if (settingTimestamp != null && !settingTimestamp.isEmpty()) {
-            if (System.currentTimeMillis() - Long.parseLong(settingTimestamp) > GroupInfoService.SETTING_TIMEOUT_MS) {
-                sender.execute(sendContent.messageText(update, "本次设置超时，请去群里重新发送/setbot"));
+            if (GroupInfoService.isSettingExpired(groupInfoWithBLOBs)) {
+                sender.execute(sendContent.messageText(update, "本次设置超时，请在私聊发送 /start 重新选择群组"));
             } else {
                 if (cooldownMap.isCooldownElapsed(userId, addRuleCacheMap.getGroupIdForUser(userId), 10000)) {
                     String keywords = groupInfoWithBLOBs.getKeywords();

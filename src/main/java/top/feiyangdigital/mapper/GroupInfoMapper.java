@@ -92,4 +92,16 @@ public interface GroupInfoMapper {
     @Select("select groupId from groupinfo where aiCsFlag = 'open' and aiCsPrivateFlag = 'open' " +
             "and ownerAndAnonymousAdmins like concat('%', #{userId}, '%') order by id asc limit 1")
     String selectAiCsPrivateGroupId(@Param("userId") String userId);
+
+    /**
+     * 查询该管理员（群主 / 匿名管理员）名下的所有群组，用于私聊 /start 的群组列表。
+     * <p>
+     * ownerAndAnonymousAdmins 存的是「userId|userId|...」（见 CheckUser.fetchHighAdminList），
+     * 故先给两端补上「|」再做匹配，避免 userId=123 误命中 1234。
+     * 只取 groupId / groupName 两列，不涉及 BLOB，开销很小。
+     */
+    @Select("select groupId, groupName from groupinfo " +
+            "where concat('|', ownerAndAnonymousAdmins, '|') like concat('%|', #{userId}, '|%') " +
+            "order by id asc")
+    List<GroupInfo> selectGroupsManagedBy(@Param("userId") String userId);
 }

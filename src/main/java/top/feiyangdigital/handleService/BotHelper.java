@@ -12,6 +12,7 @@ import org.telegram.telegrambots.meta.api.objects.chatmember.ChatMember;
 import org.telegram.telegrambots.meta.bots.AbsSender;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import top.feiyangdigital.callBack.CommonCallBack;
+import top.feiyangdigital.callBack.PanelMenu;
 import top.feiyangdigital.callBack.aiCsCallBack.DeleteAiCsPrompt;
 import top.feiyangdigital.callBack.aiCsCallBack.SetAiCsMenu;
 import top.feiyangdigital.callBack.deleteRuleCallBack.SetDeleteView;
@@ -24,6 +25,7 @@ import top.feiyangdigital.callBack.spamOption.SetFloodInfoCount;
 import top.feiyangdigital.callBack.spamOption.SetFloodTime;
 import top.feiyangdigital.entity.BaseInfo;
 import top.feiyangdigital.entity.DeleteGropuRuleMapEntity;
+import top.feiyangdigital.entity.GroupInfo;
 import top.feiyangdigital.entity.GroupInfoWithBLOBs;
 import top.feiyangdigital.entity.KeywordsFormat;
 import top.feiyangdigital.scheduledTasks.HandleOption;
@@ -67,6 +69,9 @@ public class BotHelper {
 
     @Autowired
     private CommonCallBack commonCallBack;
+
+    @Autowired
+    private PanelMenu panelMenu;
 
     @Autowired
     private AddRuleCacheMap addRuleCacheMap;
@@ -121,27 +126,109 @@ public class BotHelper {
     }
 
 
-    public void sendInlineKeyboard(AbsSender sender, Update update) throws TelegramApiException {
-        String userId = update.getMessage().getFrom().getId().toString();
+    /**
+     * 展示/刷新私聊管理面板。
+     * <p>
+     * update 是私聊消息（/start 深链）时发新消息；是按钮回调（切换群组）时原地编辑。
+     *
+     * @param notice 面板顶部的提示语（可为 null）
+     */
+    public void showMainMenu(AbsSender sender, Update update, String userId, String notice) throws TelegramApiException {
+        KeywordsFormat keywordsFormat = new KeywordsFormat();
+        boolean hasNotice = notice != null && !notice.isEmpty();
+        keywordsFormat.setReplyText((hasNotice ? notice + "\n" : "") + panelMenu.mainMenuText(userId));
+        keywordsFormat.setKeywordsButtons(panelMenu.mainMenuButtons());
+        if (update.getCallbackQuery() != null) {
+            sender.execute(sendContent.editResponseMessage(update, keywordsFormat, "html"));
+        } else {
+            sender.execute((SendMessage) sendContent.createResponseMessage(update, keywordsFormat, "html"));
+        }
+    }
+
+    /**
+     * 让指定管理员进入指定群的管理面板（私聊）。
+     * <p>
+     * 两条入口共用：群内 /setbot 的深链（update 为 message）、私聊 /start 列表里选群（update 为 callbackQuery）。
+     * <p>
+     * 进入即把该群的「设置有效期」重置为 15 分钟 —— 以前只有群内 /setbot 能开启一次配置会话，
+     * 现在私聊 /start 选群等价（这是私聊入口的核心变化）。
+     *
+     * @return 是否成功进入面板
+     */
+    public boolean openPanelForGroup(AbsSender sender, Update update, String userId, String groupId) throws TelegramApiException {
+        GroupInfoWithBLOBs groupInfo = groupInfoService.selAllByGroupId(groupId);
+        if (groupInfo == null) {
+            sender.execute(sendContent.messageText(update, "❌该群组不存在或已被移除，请发送 /start 重新选择。"));
+            return false;
+        }
+        if (!isManagedBy(groupInfo, userId)) {
+            sender.execute(sendContent.messageText(update, "❌你无权管理该群组，仅群主或匿名管理员可操作。"));
+            return false;
+        }
+        // 重置有效期 = 开启一次 15 分钟的配置会话
+        GroupInfoWithBLOBs refresh = new GroupInfoWithBLOBs();
+        refresh.setSettingtimestamp(String.valueOf(System.currentTimeMillis()));
+        groupInfoService.updateSelectiveByChatId(refresh, groupId);
+        // 绑定内存映射：面板所有按钮回调都靠这里找回“当前正在设置的群”
+        addRuleCacheMap.updateUserMapping(userId, groupInfo.getGroupid(), groupInfo.getGroupname(), groupInfo.getKeywordsflag(), groupInfo.getAiflag(), groupInfo.getCrontabflag());
+        deleteRuleCacheMap.updateUserMapping(userId, groupInfo.getGroupid(), groupInfo.getGroupname(), groupInfo.getDeletekeywordflag());
+        showMainMenu(sender, update, userId, null);
+        return true;
+    }
+
+    /**
+     * 该群是否由该用户（群主 / 匿名管理员）管理。
+     * ownerAndAnonymousAdmins 形如「123|456」，两端补「|」后再匹配，避免 userId=123 误命中 1234。
+     */
+    public static boolean isManagedBy(GroupInfoWithBLOBs groupInfo, String userId) {
+        String admins = groupInfo.getOwnerandanonymousadmins();
+        return admins != null && userId != null && ("|" + admins + "|").contains("|" + userId + "|");
+    }
+
+    /**
+     * 展示「我管理的群组」列表，点选即可进入对应群的面板。
+     * <p>
+     * 这是私聊 /start 的落地页：不再需要先回群里发 /setbot。
+     */
+    public void sendGroupList(AbsSender sender, Update update) throws TelegramApiException {
+        String userId = userIdOf(update);
+        List<GroupInfo> groups = groupInfoService.selGroupsManagedBy(userId);
 
         List<String> keywordsButtons = new ArrayList<>();
+        if (groups != null) {
+            for (GroupInfo group : groups) {
+                keywordsButtons.add(panelMenu.groupButtonText(group) + "##" + PanelMenu.SWITCH_GROUP + group.getGroupid());
+            }
+        }
+        keywordsButtons.add("➕将Bot加入群组$$" + String.format("https://t.me/%s?startgroup=start", BaseInfo.getBotName()));
+        keywordsButtons.add("❌关闭菜单##close");
+
         KeywordsFormat keywordsFormat = new KeywordsFormat();
-        keywordsButtons.add("📝规则设置##autoReply%%⚙️群组设置##groupSetting");
-        keywordsButtons.add("🕐打开/关闭定时发送消息##cronOption%%🔮打开/关闭AI##aiOption");
-        keywordsButtons.add("🌊防刷屏模式##antiFlood%%💎其他群组设置##otherGroupSetting");
-        keywordsButtons.add("☎️AI智能客服##aiCsMenu");
-        keywordsButtons.add("仓库地址$$https://github.com/Cnievana/feiyangdigital-bot%%官方群组$$https://t.me/stonehd");
-        keywordsButtons.add("❌关闭菜单##closeMenu");
-        keywordsFormat.setReplyText("当前群组：<b>" + addRuleCacheMap.getGroupNameForUser(userId) + "</b>\n当前群组ID：<b>" + addRuleCacheMap.getGroupIdForUser(userId) + "</b>\n当前可输入状态：<b>" + addRuleCacheMap.getKeywordsFlagForUser(userId) + "</b>\n当前定时发送消息状态：<b>" + addRuleCacheMap.getCrontabFlagForUser(userId) + "</b>\n当前AI状态：<b>" + addRuleCacheMap.getAiFlagForUser(userId) + "</b>\n⚡️请选择一个操作!⚡️");
+        keywordsFormat.setReplyText(panelMenu.groupListText(groups == null ? 0 : groups.size()));
         keywordsFormat.setKeywordsButtons(keywordsButtons);
-        sender.execute((SendMessage) sendContent.createResponseMessage(update, keywordsFormat, "html"));
+        if (update.getCallbackQuery() != null) {
+            sender.execute(sendContent.editResponseMessage(update, keywordsFormat, "html"));
+        } else {
+            sender.execute((SendMessage) sendContent.createResponseMessage(update, keywordsFormat, "html"));
+        }
+    }
+
+    /** 兼容从私聊消息 / 按钮回调两种 update 里取用户ID。 */
+    public static String userIdOf(Update update) {
+        if (update.getCallbackQuery() != null) {
+            return update.getCallbackQuery().getFrom().getId().toString();
+        }
+        if (update.getMessage() != null) {
+            return update.getMessage().getFrom().getId().toString();
+        }
+        return null;
     }
 
     /**
      * 面板按钮点击时刷新当前群组的「设置有效期」（settingTimeStamp）。
      * <p>
      * 规则：**仅在尚未超时时续期**；已超时则不续期，会话保持失效，
-     * 必须回群里重新发送 /setbot 才能重新开始配置。
+     * 需在私聊发送 /start 重新选择群组（或回群里重发 /setbot）才能重新开始配置。
      * <p>
      * 这里刻意分两次调用（读 → 写）而不是封装成一个 service 方法，
      * 是为了让 {@code @Cacheable} / {@code @Transactional} 都走代理，避免自调用导致注解失效。
@@ -155,7 +242,7 @@ public class BotHelper {
                 return;
             }
             if (GroupInfoService.isSettingExpired(groupInfoService.selAllByGroupId(groupId))) {
-                // 已超时：不续期，必须回群里重新发送 /setbot
+                // 已超时：不续期，需在私聊发送 /start 重新选择群组
                 return;
             }
             GroupInfoWithBLOBs record = new GroupInfoWithBLOBs();
@@ -171,8 +258,28 @@ public class BotHelper {
         String callbackData = callbackQuery.getData();
         if (callbackData == null || callbackData.isEmpty()) return;
 
-        // 面板按钮操作：未超时则重置有效期；已超时则不续期（需回群里重新发送 /setbot）
-        refreshSettingTimestamp(callbackQuery.getFrom().getId().toString());
+        String userId = callbackQuery.getFrom().getId().toString();
+
+        // 「切换群组」会重新绑定群组，旧绑定的有效期不续期（选中的新群在 openPanelForGroup 里统一重置）
+        if (!callbackData.startsWith(PanelMenu.SWITCH_GROUP)) {
+            // 面板按钮操作：未超时则重置有效期；已超时则不续期
+            refreshSettingTimestamp(userId);
+        }
+
+        // 「切换群组」：无群ID → 回到群组列表；带群ID → 进入该群面板
+        if (callbackData.startsWith(PanelMenu.SWITCH_GROUP)) {
+            // 静默应答：让客户端按钮立即停止 loading（纯切换操作，无需弹提示）
+            AnswerCallbackQuery switchAnswer = new AnswerCallbackQuery();
+            switchAnswer.setCallbackQueryId(callbackQuery.getId());
+            sender.execute(switchAnswer);
+            String targetGroupId = callbackData.substring(PanelMenu.SWITCH_GROUP.length());
+            if (targetGroupId.isEmpty()) {
+                sendGroupList(sender, update);
+            } else {
+                openPanelForGroup(sender, update, userId, targetGroupId);
+            }
+            return;
+        }
 
         AnswerCallbackQuery answer = new AnswerCallbackQuery();
         answer.setCallbackQueryId(callbackQuery.getId());

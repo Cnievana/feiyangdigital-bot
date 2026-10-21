@@ -6,6 +6,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import top.feiyangdigital.entity.GroupInfo;
 import top.feiyangdigital.entity.GroupInfoExample;
 import top.feiyangdigital.entity.GroupInfoWithBLOBs;
 import top.feiyangdigital.mapper.GroupInfoMapper;
@@ -69,6 +70,14 @@ public class GroupInfoService {
     /** 设置「AI进群昵称/简介检测」开关，返回是否成功。 */
     public boolean updateIntoGroupAiCheckFlag(String groupId, String flag){
         return groupInfoMapper.updateIntoGroupAiCheckFlag(groupId, flag) > 0;
+    }
+
+    /**
+     * 查询该管理员（群主 / 匿名管理员）名下的所有群组，用于私聊 /start 的群组列表。
+     */
+    @Transactional(propagation = Propagation.NEVER)
+    public List<GroupInfo> selGroupsManagedBy(String userId) {
+        return groupInfoMapper.selectGroupsManagedBy(userId);
     }
 
     /**

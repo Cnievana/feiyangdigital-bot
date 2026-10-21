@@ -68,7 +68,7 @@ public class AddAiCsPrompt {
         }
         if (groupInfoService.isSettingExpired(groupId)) {
             aiCsCacheMap.clearFlag(userId);
-            sender.execute(sendContent.messageText(update, "⏱ 本次设置已超时（有效期 15 分钟）。\n超时后无法在面板续期，请回群里重新发送 /setbot 后重新进入面板。"));
+            sender.execute(sendContent.messageText(update, "⏱ 本次设置已超时（有效期 15 分钟）。\n请在私聊里发送 /start 重新选择群组，即可继续设置。"));
             return;
         }
 
@@ -131,7 +131,7 @@ public class AddAiCsPrompt {
         }
         if (groupInfoService.isSettingExpired(groupId)) {
             aiCsCacheMap.clearFlag(userId);
-            sender.execute(sendContent.messageText(update, "⏱ 本次设置已超时（有效期 15 分钟）。\n超时后无法在面板续期，请回群里重新发送 /setbot 后重新进入面板。"));
+            sender.execute(sendContent.messageText(update, "⏱ 本次设置已超时（有效期 15 分钟）。\n请在私聊里发送 /start 重新选择群组，即可继续设置。"));
             return;
         }
 

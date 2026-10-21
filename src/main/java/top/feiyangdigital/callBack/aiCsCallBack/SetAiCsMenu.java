@@ -116,7 +116,7 @@ public class SetAiCsMenu {
         buttons.add("◀️返回触发方式##aiCsTrigger");
         buttons.add("❌关闭菜单##closeMenu");
         KeywordsFormat format = new KeywordsFormat();
-        format.setReplyText("⚡️请直接在输入框里输入触发关键词。\n可填写<b>正则表达式</b>（例如：<code>价格|多少钱|怎么卖</code>），\n只要群成员发言命中即会唤起AI客服。\n\n⏱ 设置有效期 15 分钟，未超时期间每点一次按钮都会重新计时；一旦超时需回群里重新发送 /setbot。⚡️");
+        format.setReplyText("⚡️请直接在输入框里输入触发关键词。\n可填写<b>正则表达式</b>（例如：<code>价格|多少钱|怎么卖</code>），\n只要群成员发言命中即会唤起AI客服。\n\n⏱ 设置有效期 15 分钟，未超时期间每点一次按钮都会重新计时；一旦超时请在私聊发送 /start 重新选择群组。⚡️");
         format.setKeywordsButtons(buttons);
         sender.execute(sendContent.editResponseMessage(update, format, "html"));
     }
@@ -137,7 +137,7 @@ public class SetAiCsMenu {
                 + "<b>第二行起</b>＝提示词正文（可多行）\n\n"
                 + "例如：\n<code>退款政策\n本店支持7天无理由退款，请联系人工客服。</code>\n\n"
                 + "若只输入一行，则整行既作名称也作正文。\n\n"
-                + "⏱ 设置有效期 15 分钟，未超时期间每点一次按钮都会重新计时；一旦超时需回群里重新发送 /setbot。⚡️");
+                + "⏱ 设置有效期 15 分钟，未超时期间每点一次按钮都会重新计时；一旦超时请在私聊发送 /start 重新选择群组。⚡️");
         format.setKeywordsButtons(buttons);
         sender.execute(sendContent.editResponseMessage(update, format, "html"));
     }
@@ -229,7 +229,7 @@ public class SetAiCsMenu {
         List<String> buttons = new ArrayList<>();
         buttons.add("◀️返回AI客服##aiCsMenu%%❌关闭菜单##closeMenu");
         KeywordsFormat format = new KeywordsFormat();
-        format.setReplyText("⏱ 本次设置已超时（有效期 15 分钟）。\n超时后无法在面板继续操作，请回群里重新发送 <code>/setbot</code> 后重新进入面板。");
+        format.setReplyText("⏱ 本次设置已超时（有效期 15 分钟）。\n请在私聊里发送 /start 重新选择群组，即可继续操作。");
         format.setKeywordsButtons(buttons);
         sender.execute(sendContent.editResponseMessage(update, format, "html"));
         return true;

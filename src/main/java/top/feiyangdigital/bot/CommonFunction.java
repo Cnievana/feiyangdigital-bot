@@ -283,12 +283,8 @@ public class CommonFunction {
                 if (update.hasMessage() && update.getMessage().getText() != null && update.getMessage().getChat().isUserChat()) {
 
                     if (update.getMessage().getText().contains("start _groupId")) {
-                        GroupInfoWithBLOBs groupInfoWithBLOBs = groupInfoService.selAllByGroupId(update.getMessage().getText().split("_")[1].substring(7));
-                        if (groupInfoWithBLOBs.getOwnerandanonymousadmins().contains(update.getMessage().getFrom().getId().toString())) {
-                            addRuleCacheMap.updateUserMapping(update.getMessage().getFrom().getId().toString(), groupInfoWithBLOBs.getGroupid(), groupInfoWithBLOBs.getGroupname(), groupInfoWithBLOBs.getKeywordsflag(), groupInfoWithBLOBs.getAiflag(), groupInfoWithBLOBs.getCrontabflag());
-                            deleteRuleCacheMap.updateUserMapping(update.getMessage().getFrom().getId().toString(), groupInfoWithBLOBs.getGroupid(), groupInfoWithBLOBs.getGroupname(), groupInfoWithBLOBs.getDeletekeywordflag());
-                            botHelper.sendInlineKeyboard(sender, update);
-                        }
+                        // 群内 /setbot 的深链：直接进入该群面板
+                        botHelper.openPanelForGroup(sender, update, update.getMessage().getFrom().getId().toString(), update.getMessage().getText().split("_")[1].substring(7));
                     } else if (update.getMessage().getText().contains("start _intoGroupInfo")) {
                         String[] idGroup = update.getMessage().getText().split("_")[1].substring(13).split("and");
                         String chatId = idGroup[0];
@@ -304,14 +300,8 @@ public class CommonFunction {
                             sender.execute(sendContent.messageText(update, "❌这不是你的验证"));
                         }
                     } else if ("/start".equals(update.getMessage().getText())) {
-                        String url = String.format("https://t.me/%s?startgroup=start", BaseInfo.getBotName());
-                        List<String> keywordsButtons = new ArrayList<>();
-                        KeywordsFormat keywordsFormat = new KeywordsFormat();
-                        keywordsButtons.add("➕将Bot加入群组$$" + url);
-                        keywordsButtons.add("❌关闭菜单##close");
-                        keywordsFormat.setReplyText("<b>GitHub地址：</b><b><a href='https://github.com/Cnievana/feiyangdigital-bot'>点击查看</a></b>\n<b>官方群组：</b><b><a href='https://t.me/stonehd'>点击加入</a></b>\n");
-                        keywordsFormat.setKeywordsButtons(keywordsButtons);
-                        sender.execute((SendMessage) sendContent.createResponseMessage(update, keywordsFormat, "html"));
+                        // 私聊 /start：列出当前用户可管理的群组，点选即可进入对应群的面板
+                        botHelper.sendGroupList(sender, update);
                     } else {
                         String userId = update.getMessage().getFrom().getId().toString();
                         if ("allow".equals(addRuleCacheMap.getKeywordsFlagForUser(userId))) {
