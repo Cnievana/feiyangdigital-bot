@@ -37,4 +37,13 @@
             overflowToDisk="false"
             memoryStoreEvictionPolicy="LRU"
     />
+    <!-- 用户个人频道画像（personal_chat）：TTL 10 分钟，避免频道名变更后长期失效 -->
+    <cache
+            name="userChannelProfile"
+            maxElementsInMemory="50000"
+            eternal="false"
+            timeToLiveSeconds="600"
+            overflowToDisk="false"
+            memoryStoreEvictionPolicy="LRU"
+    />
 </ehcache>

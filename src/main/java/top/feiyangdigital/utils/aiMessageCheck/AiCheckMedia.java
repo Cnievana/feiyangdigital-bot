@@ -107,11 +107,8 @@ public class AiCheckMedia {
                         if (safeSearchAnnotation != null && (safeSearchAnnotation.getAdultValue() >= 3 || safeSearchAnnotation.getViolenceValue() >= 3 || safeSearchAnnotation.getRacyValue() >= 3)) {
                             String text = String.format("用户 <b><a href=\"tg://user?id=%d\">%s</a></b> 已被AI检测发送违规媒体，直接删除！", Long.valueOf(userId), firstName);
                             String otherText = String.format("<b>违规用户UserID为：<a href=\"tg://user?id=%d\">%s</a></b>", Long.valueOf(userId), userId);
-                            SendMessage notification = new SendMessage();
-                            notification.setChatId(groupId);
-                            notification.setText(text + "\n" + otherText);
-                            notification.setParseMode(ParseMode.HTML);
-                            timerDelete.deleteMessageImmediatelyAndNotifyAfterDelay(sender, notification, groupId, messageId, Long.valueOf(userId), 90);
+                            // 与文本广告一致：群开启「AI违规自动禁言」时命中即永久禁言
+                            aiCheckMessage.notifyViolation(sender, groupId, userId, messageId, text + "\n" + otherText);
                             botRecord1.setViolationcount(violationCount + 1);
                         } else if (StringUtils.hasText(realUpdateText)) {
                             aiCheckMessage.contentAiOption(sender, groupId, userId, firstName, messageId, realUpdateText);

@@ -46,7 +46,7 @@ public class PanelMenu {
         buttons.add("📝规则设置##autoReply%%⚙️群组设置##groupSetting");
         buttons.add("🕐打开/关闭定时发送消息##cronOption%%🔮打开/关闭AI##aiOption");
         buttons.add("🌊防刷屏模式##antiFlood%%💎其他群组设置##otherGroupSetting");
-        buttons.add("☎️AI智能客服##aiCsMenu");
+        buttons.add("⛔AI违规自动禁言##aiMuteOption%%☎️AI智能客服##aiCsMenu");
         buttons.add("⇆切换群组##" + SWITCH_GROUP);
         buttons.add("仓库地址$$https://github.com/Cnievana/feiyangdigital-bot%%官方群组$$https://t.me/stonehd");
         buttons.add("❌关闭菜单##closeMenu");
@@ -64,6 +64,7 @@ public class PanelMenu {
         sb.append("当前可输入状态：<b>").append(escapeHtml(addRuleCacheMap.getKeywordsFlagForUser(userId))).append("</b>\n");
         sb.append("当前定时发送消息状态：<b>").append(escapeHtml(addRuleCacheMap.getCrontabFlagForUser(userId))).append("</b>\n");
         sb.append("当前AI状态：<b>").append(escapeHtml(addRuleCacheMap.getAiFlagForUser(userId))).append("</b>\n");
+        sb.append("当前AI违规自动禁言：<b>").append(escapeHtml(groupInfoService.selAiMuteFlag(groupId))).append("</b>\n");
         sb.append(settingExpireText(groupId));
         sb.append("⚡️请选择一个操作!⚡️");
         return sb.toString();

@@ -1,7 +1,7 @@
 package top.feiyangdigital.handleService;
 
-import com.alibaba.fastjson2.JSONObject;
 import com.unfbx.chatgpt.entity.chat.ChatChoice;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -24,14 +24,17 @@ import top.feiyangdigital.sqlService.BotRecordService;
 import top.feiyangdigital.sqlService.GroupInfoService;
 import top.feiyangdigital.utils.SendContent;
 import top.feiyangdigital.utils.TimerDelete;
+import top.feiyangdigital.utils.aiMessageCheck.AiResultParser;
 import top.feiyangdigital.utils.groupCaptch.CaptchaManagerCacheMap;
 import top.feiyangdigital.utils.groupCaptch.GroupMessageIdCacheMap;
 import top.feiyangdigital.utils.groupCaptch.RestrictOrUnrestrictUser;
+import top.feiyangdigital.utils.userProfile.UserChannelProfileService;
 
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class NewMemberIntoGroup {
 
@@ -58,6 +61,9 @@ public class NewMemberIntoGroup {
 
     @Autowired
     private OpenAiApiService openAiApiService;
+
+    @Autowired
+    private UserChannelProfileService userChannelProfileService;
 
     /** AI 判定为广告的阈值（与群内消息检测保持一致）。 */
     private static final int AI_SPAM_THRESHOLD = 6;
@@ -99,12 +105,30 @@ public class NewMemberIntoGroup {
         // 拿不到（对方隐私设置等）时为 null，不影响昵称匹配，也不会因此误封。
         String bio = fetchUserBio(sender, userId);
 
-        if (intoGroupNameCheck(sender, userId, chatId, groupInfoWithBLOBs, firstName, lastName, bio)) {
+        // 读取个人频道画像（频道名/简介/置顶）：广告号常把广告写在这里，而昵称与简介保持干净。
+        // 仅在「AI进群检测」或「进群昵称/简介检测」开启时才请求，避免无谓的 API 调用；
+        // 未设置个人频道或被隐藏时为空串，不影响其他检测。
+        boolean checkChannelProfile = "open".equals(groupInfoService.selIntoGroupAiCheckFlag(chatId.toString()))
+                || (groupInfoWithBLOBs != null && "open".equals(groupInfoWithBLOBs.getIntogroupusernamecheckflag()));
+        String channelProfile = checkChannelProfile
+                ? userChannelProfileService.getChannelProfile(userId.toString())
+                : "";
+
+        // 进群链路诊断日志：排查「广告号进群没被拦住」时，先看这两条是否输出。
+        log.warn("进群检测开始 groupId={}, userId={}, name={}, 进群昵称检测={}, AI进群检测={}",
+                chatId, userId, firstName,
+                groupInfoWithBLOBs == null ? "群未初始化" : groupInfoWithBLOBs.getIntogroupusernamecheckflag(),
+                checkChannelProfile ? "open" : "close");
+        log.warn("进群检测资料 groupId={}, userId={}, bio={}, 个人频道画像={}",
+                chatId, userId, bio == null ? "（取不到）" : bio,
+                StringUtils.hasText(channelProfile) ? channelProfile.replace("\n", " / ") : "（无个人频道）");
+
+        if (intoGroupNameCheck(sender, userId, chatId, groupInfoWithBLOBs, firstName, lastName, bio, channelProfile)) {
             return;
         }
 
         // AI 进群昵称/简介检测：命中则永久限制并直接返回，不再进入验证流程
-        if (aiCheckNicknameAndBio(sender, userId, chatId, firstName, lastName, groupInfoWithBLOBs, bio)) {
+        if (aiCheckNicknameAndBio(sender, userId, chatId, firstName, lastName, groupInfoWithBLOBs, bio, channelProfile)) {
             return;
         }
 
@@ -175,7 +199,7 @@ public class NewMemberIntoGroup {
         }
     }
 
-    public boolean intoGroupNameCheck(AbsSender sender, Long userId, Long chatId, GroupInfoWithBLOBs groupInfoWithBLOBs, String firstName, String lastName, String bio) {
+    public boolean intoGroupNameCheck(AbsSender sender, Long userId, Long chatId, GroupInfoWithBLOBs groupInfoWithBLOBs, String firstName, String lastName, String bio, String channelProfile) {
         if (groupInfoWithBLOBs != null && "open".equals(groupInfoWithBLOBs.getIntogroupusernamecheckflag())) {
             if (StringUtils.hasText(groupInfoWithBLOBs.getKeywords()) && groupInfoWithBLOBs.getKeywords().contains("&&intoGroupBan=")) {
                 List<KeywordsFormat> keywordsFormatList = Arrays.stream(groupInfoWithBLOBs.getKeywords().split("\\n{2,}"))
@@ -187,11 +211,12 @@ public class NewMemberIntoGroup {
                     if (currentMap.containsKey("DelIntoGroupBan")) {
                         String regex = keywordFormat.getRegex();
                         Pattern pattern = Pattern.compile(regex);
-                        // 昵称或「个人简介」任一命中即判定违规
+                        // 昵称、「个人简介」或「个人频道画像」任一命中即判定违规
                         boolean matched = pattern.matcher(firstName).find()
                                 || pattern.matcher(lastName).find()
                                 || pattern.matcher(firstName + lastName).find()
-                                || (StringUtils.hasText(bio) && pattern.matcher(bio).find());
+                                || (StringUtils.hasText(bio) && pattern.matcher(bio).find())
+                                || (StringUtils.hasText(channelProfile) && pattern.matcher(channelProfile).find());
                         if (matched) {
                             restrictOrUnrestrictUser.restrictUser(sender, userId, chatId.toString(), 0L);
                             KeywordsFormat newKeyFormat = new KeywordsFormat();
@@ -220,7 +245,8 @@ public class NewMemberIntoGroup {
     }
 
     /**
-     * AI 进群昵称/简介检测：把新成员的昵称与个人简介交给 DeepSeek 判定，
+     * AI 进群昵称/简介/个人频道检测：把新成员的昵称、个人简介，以及其绑定的个人频道
+     * （频道名 / 简介 / 置顶）一并交给 DeepSeek 判定，
      * 判定为广告（spamChance >= 阈值）则直接永久限制发言并返回 true（调用方据此跳过验证流程）。
      * <p>
      * 安全设计：仅在群开启「AI进群昵称/简介检测」时执行；
@@ -228,12 +254,13 @@ public class NewMemberIntoGroup {
      * 绝不会因为 AI 出错而误封正常用户。
      */
     private boolean aiCheckNicknameAndBio(AbsSender sender, Long userId, Long chatId, String firstName, String lastName,
-                                          GroupInfoWithBLOBs groupInfoWithBLOBs, String bio) {
+                                          GroupInfoWithBLOBs groupInfoWithBLOBs, String bio, String channelProfile) {
         if (groupInfoWithBLOBs == null || !"open".equals(groupInfoService.selIntoGroupAiCheckFlag(chatId.toString()))) {
             return false;
         }
         String content = "用户昵称：" + firstName + " " + (lastName == null ? "" : lastName)
-                + "\n个人简介：" + (bio == null ? "（无）" : bio);
+                + "\n个人简介：" + (bio == null ? "（无）" : bio)
+                + (StringUtils.hasText(channelProfile) ? "\n" + channelProfile : "");
         List<ChatChoice> choices;
         try {
             choices = openAiApiService.getOpenAiAnalyzeResult(content);
@@ -244,19 +271,20 @@ public class NewMemberIntoGroup {
                 || !StringUtils.hasText(choices.get(0).getMessage().getContent())) {
             return false;
         }
-        JSONObject json;
-        try {
-            json = JSONObject.parseObject(choices.get(0).getMessage().getContent());
-        } catch (Exception e) {
+        String raw = choices.get(0).getMessage().getContent();
+        AiResultParser.SpamResult result = AiResultParser.parseSpam(raw);
+        if (result == null) {
+            log.warn("AI进群检测返回内容无法解析出spamChance，放行。groupId={}, userId={}, 返回内容={}", chatId, userId, raw);
             return false;
         }
-        Integer spamChance = json.getInteger("spamChance");
-        if (spamChance == null || spamChance < AI_SPAM_THRESHOLD) {
+        Integer spamChance = result.getSpamChance();
+        if (spamChance < AI_SPAM_THRESHOLD) {
+            log.warn("AI进群检测未命中 groupId={}, userId={}, spamChance={}", chatId, userId, spamChance);
             return false;
         }
-        String spamReason = json.getString("spamReason");
+        String spamReason = result.getSpamReason();
         restrictOrUnrestrictUser.restrictUser(sender, userId, chatId.toString(), 0L);
-        String text = String.format("用户 <b><a href=\"tg://user?id=%d\">%s</a></b> 因昵称/简介被AI判定为广告，已被永久限制发言！\n判定原因：<tg-spoiler>%s</tg-spoiler>",
+        String text = String.format("用户 <b><a href=\"tg://user?id=%d\">%s</a></b> 因昵称/简介/个人频道被AI判定为广告，已被永久限制发言！\n判定原因：<tg-spoiler>%s</tg-spoiler>",
                 userId, firstName, spamReason == null ? "" : spamReason);
         SendMessage notification = new SendMessage();
         notification.setChatId(chatId);

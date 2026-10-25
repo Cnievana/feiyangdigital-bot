@@ -365,6 +365,9 @@ public class BotHelper {
             case "aiOption":
                 commonCallBack.aiOption(sender, update);
                 return;
+            case "aiMuteOption":
+                commonCallBack.aiMuteOption(sender, update);
+                return;
             case "aiCsMenu":
                 setAiCsMenu.hadleCallBack(sender, update);
                 return;

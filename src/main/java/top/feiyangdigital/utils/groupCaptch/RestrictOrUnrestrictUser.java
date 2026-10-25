@@ -201,8 +201,15 @@ public class RestrictOrUnrestrictUser {
         restrictChatMember.setUserId(userId);
         restrictChatMember.setUntilDateDateTime(ZonedDateTime.now().plusSeconds(secondsToAdd));
 
+        // 必须显式关闭全部「发送类」权限。
+        // 原实现只关 canSendOtherMessages，canSendMessages 仍为 true，
+        // 结果是「永久限制发言」只挡住了贴纸/inline bot 一部分，用户照样能发文字、图片、视频，
+        // 甚至通过 @ 广告 bot 继续往群里投放广告。
         ChatPermissions chatPermissions = new ChatPermissions();
+        chatPermissions.setCanSendMessages(false);
+        chatPermissions.setCanSendPolls(false);
         chatPermissions.setCanSendOtherMessages(false);
+        chatPermissions.setCanAddWebPagePreviews(false);
         restrictChatMember.setPermissions(chatPermissions);
 
         try {
@@ -219,14 +226,16 @@ public class RestrictOrUnrestrictUser {
         restrictChatMember.setChatId(chatId);
         restrictChatMember.setUserId(userId);
 
+        // 解禁只恢复「发送类」权限，不再把改群信息 / 置顶 / 邀请等管理类权限一并打开；
+        // 原实现会让普通成员在解禁后获得越过群默认设置的管理权限。
         ChatPermissions permissions = new ChatPermissions();
         permissions.setCanSendMessages(true);
         permissions.setCanSendPolls(true);
         permissions.setCanSendOtherMessages(true);
         permissions.setCanAddWebPagePreviews(true);
-        permissions.setCanChangeInfo(true);
-        permissions.setCanInviteUsers(true);
-        permissions.setCanPinMessages(true);
+        permissions.setCanChangeInfo(false);
+        permissions.setCanInviteUsers(false);
+        permissions.setCanPinMessages(false);
 
         restrictChatMember.setPermissions(permissions);
 

@@ -55,6 +55,21 @@ public class CheckUser {
         return false; // 如果用户不是管理员
     }
 
+    /**
+     * 按「群ID + 用户ID」判断是否管理员。
+     * <p>
+     * 供没有 {@link Update} 的场景复用（例如 AI 自动禁言时的管理员豁免判断），
+     * 与 {@link #isGroupAdmin(AbsSender, Update)} 共用同一份 {@code adminsCache}。
+     */
+    public boolean isGroupAdmin(AbsSender sender, String chatId, Long userId) throws TelegramApiException {
+        for (ChatMember admin : adminList.getAdmins(sender, chatId)) {
+            if (admin.getUser().getId().equals(userId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public boolean isChatOwner(AbsSender sender, Update update) throws TelegramApiException {
         String chatId;
         long uid;

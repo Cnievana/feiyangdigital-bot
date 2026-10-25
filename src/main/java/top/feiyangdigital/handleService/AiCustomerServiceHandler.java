@@ -107,21 +107,7 @@ public class AiCustomerServiceHandler {
             }
 
             String text = message.getText();
-            String mode = groupInfoService.selAiCsTriggerMode(groupId);
-            boolean triggered;
-            switch (mode) {
-                case "all":
-                    triggered = true;
-                    break;
-                case "keyword":
-                    triggered = matchKeyword(groupInfoService.selAiCsKeyword(groupId), text);
-                    break;
-                case "at":
-                default:
-                    triggered = isAtBot(message);
-                    break;
-            }
-            if (!triggered) {
+            if (!matchesTrigger(groupId, message, text)) {
                 return false;
             }
 
@@ -287,6 +273,96 @@ public class AiCustomerServiceHandler {
             } catch (TelegramApiException ex) {
                 log.error("AI客服发送回复失败：{}", ex.getMessage());
             }
+        }
+    }
+
+    /**
+     * 该消息是否命中本群 AI 客服的触发条件（只看「总开关 + 触发方式」，不看冷却与知识条目）。
+     * <p>
+     * 供 AI 广告检测在送检前调用：命中客服触发条件的消息应由客服回答，
+     * 不能因为内容里出现「@机器人 + 优惠码」这类字样就被判成广告（实测误判）。
+     * <p>
+     * 注意：「全量」模式一律返回 false —— 该模式下每条消息都算触发，
+     * 若在这里也豁免广告检测，等于把整个群的广告检测关掉。
+     */
+    public boolean isAiCsTriggered(Message message) {
+        if (message == null || !message.hasText() || message.getFrom() == null
+                || Boolean.TRUE.equals(message.getFrom().getIsBot())) {
+            return false;
+        }
+        try {
+            String groupId = message.getChatId().toString();
+            if (!"open".equals(groupInfoService.selAiCsFlag(groupId))) {
+                return false;
+            }
+            if ("all".equals(groupInfoService.selAiCsTriggerMode(groupId))) {
+                return false;
+            }
+            String text = message.getText();
+            // 带外链、或同时 @ 了别的账号 → 典型的「@机器人 + 引流」话术，不豁免，照旧送检
+            if (hasStrongAdSignal(message, text)) {
+                return false;
+            }
+            return matchesTrigger(groupId, message, text);
+        } catch (Exception e) {
+            // 判断失败时按「未触发」处理，保证广告检测照常执行
+            log.error("AI客服触发判断异常，按未触发处理：{}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * 强广告特征：外链、或额外 @ 了其它账号。
+     * <p>
+     * 命中时即使消息触发了 AI 客服，也不豁免广告检测——
+     * 否则广告号只要把话术凑上关键词，就能借客服通道绕过检测。
+     */
+    private boolean hasStrongAdSignal(Message message, String text) {
+        if (!StringUtils.hasText(text)) {
+            return false;
+        }
+        String lower = text.toLowerCase();
+        if (lower.contains("http://") || lower.contains("https://")
+                || lower.contains("t.me/") || lower.contains("wa.me/")) {
+            return true;
+        }
+        return hasOtherMention(message, text);
+    }
+
+    /** 是否 @ 了本机器人以外的账号。 */
+    private boolean hasOtherMention(Message message, String text) {
+        if (message.getEntities() == null) {
+            return false;
+        }
+        String botName = BaseInfo.getBotName();
+        String selfMention = StringUtils.hasText(botName) ? "@" + botName.toLowerCase() : null;
+        for (MessageEntity entity : message.getEntities()) {
+            if (!"mention".equals(entity.getType())) {
+                continue;
+            }
+            int start = entity.getOffset();
+            int end = start + entity.getLength();
+            if (start < 0 || end > text.length()) {
+                continue;
+            }
+            String mention = text.substring(start, end).toLowerCase();
+            if (selfMention == null || !mention.contains(selfMention)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 触发方式判断：at（@机器人 / 回复机器人消息）、keyword（关键词正则）、all（全量）。 */
+    private boolean matchesTrigger(String groupId, Message message, String text) {
+        switch (groupInfoService.selAiCsTriggerMode(groupId)) {
+            case "all":
+                return true;
+            case "keyword":
+                return matchKeyword(groupInfoService.selAiCsKeyword(groupId), text);
+            case "at":
+            default:
+                return isAtBot(message);
         }
     }
 

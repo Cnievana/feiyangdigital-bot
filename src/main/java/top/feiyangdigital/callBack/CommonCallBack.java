@@ -99,6 +99,27 @@ public class CommonCallBack {
         sender.execute(sendContent.editResponseMessage(update, keywordsFormat, "html"));
     }
 
+    /**
+     * 切换「AI违规自动禁言」开关（群级）。
+     * <p>
+     * 开启后，AI 判定违规（文本广告 / 违规媒体）命中时会立即对该用户永久禁言；
+     * 关闭时保持原行为（只删消息 + 违规计数）。
+     */
+    public void aiMuteOption(AbsSender sender, Update update) throws TelegramApiException {
+        String userId = update.getCallbackQuery().getFrom().getId().toString();
+        String groupId = addRuleCacheMap.getGroupIdForUser(userId);
+        String text;
+        if ("open".equals(groupInfoService.selAiMuteFlag(groupId))) {
+            text = groupInfoService.updateAiMuteFlag(groupId, "close") ? "❗AI违规自动禁言已关闭" : "❗操作失败，请重试";
+        } else {
+            text = groupInfoService.updateAiMuteFlag(groupId, "open") ? "✅AI违规自动禁言已打开（命中即永久禁言）" : "❗操作失败，请重试";
+        }
+        KeywordsFormat keywordsFormat = new KeywordsFormat();
+        keywordsFormat.setReplyText(text + "\n" + panelMenu.mainMenuText(userId));
+        keywordsFormat.setKeywordsButtons(panelMenu.mainMenuButtons());
+        sender.execute(sendContent.editResponseMessage(update, keywordsFormat, "html"));
+    }
+
     public void backMainMenu(AbsSender sender, Update update) throws TelegramApiException {
         String userId = update.getCallbackQuery().getFrom().getId().toString();
         KeywordsFormat keywordsFormat = new KeywordsFormat();

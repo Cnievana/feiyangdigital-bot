@@ -50,6 +50,17 @@ public interface GroupInfoMapper {
     @Update("update groupinfo set intoGroupAiCheckFlag = #{flag} where groupId = #{groupId}")
     int updateIntoGroupAiCheckFlag(@Param("groupId") String groupId, @Param("flag") String flag);
 
+    /**
+     * 读取「AI违规自动禁言」开关（aiMuteFlag）。
+     * 该字段同样未包含在生成的实体/XML 中，用注解单独读写。
+     */
+    @Select("select aiMuteFlag from groupinfo where groupId = #{groupId}")
+    String selectAiMuteFlag(@Param("groupId") String groupId);
+
+    /** 设置「AI违规自动禁言」开关，返回受影响行数。 */
+    @Update("update groupinfo set aiMuteFlag = #{flag} where groupId = #{groupId}")
+    int updateAiMuteFlag(@Param("groupId") String groupId, @Param("flag") String flag);
+
     // ==================== AI 客服（aiCs）相关字段 ====================
     // 同 intoGroupAiCheckFlag，这几个字段未包含在生成的实体/XML 中，故用注解单独读写。
 

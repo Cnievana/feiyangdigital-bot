@@ -73,6 +73,21 @@ public class GroupInfoService {
     }
 
     /**
+     * 读取「AI违规自动禁言」开关，未设置时默认 close。
+     * 与 aiCs* 系列一致：不进 groupinfo 缓存，每次直读（groupId 有索引）。
+     */
+    @Transactional(propagation = Propagation.NEVER)
+    public String selAiMuteFlag(String groupId){
+        String flag = groupInfoMapper.selectAiMuteFlag(groupId);
+        return flag == null ? "close" : flag;
+    }
+
+    /** 设置「AI违规自动禁言」开关，返回是否成功。 */
+    public boolean updateAiMuteFlag(String groupId, String flag){
+        return groupInfoMapper.updateAiMuteFlag(groupId, flag) > 0;
+    }
+
+    /**
      * 查询该管理员（群主 / 匿名管理员）名下的所有群组，用于私聊 /start 的群组列表。
      */
     @Transactional(propagation = Propagation.NEVER)

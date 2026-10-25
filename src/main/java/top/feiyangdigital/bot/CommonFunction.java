@@ -1,6 +1,7 @@
 package top.feiyangdigital.bot;
 
 import cn.hutool.core.util.StrUtil;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
@@ -43,6 +44,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+@Slf4j
 @Component
 public class CommonFunction {
     private final Map<Long, Boolean> groupFlags = new ConcurrentHashMap<>();
@@ -245,7 +247,7 @@ public class CommonFunction {
                         if (lastName == null) {
                             lastName = "";
                         }
-                        if (newMemberIntoGroup.intoGroupNameCheck(sender, update.getMessage().getFrom().getId(), update.getMessage().getChatId(), groupInfoWithBLOBs, update.getMessage().getFrom().getFirstName(), lastName, null)) {
+                        if (newMemberIntoGroup.intoGroupNameCheck(sender, update.getMessage().getFrom().getId(), update.getMessage().getChatId(), groupInfoWithBLOBs, update.getMessage().getFrom().getFirstName(), lastName, null, null)) {
                             sender.execute(new DeleteMessage(update.getMessage().getChatId().toString(), update.getMessage().getMessageId()));
                             return;
                         }
@@ -271,8 +273,24 @@ public class CommonFunction {
         threadPoolTaskExecutor.execute(() -> {
             try {
                 //检测新入群用户且状态正常的用户
-                if (update.getChatMember() != null && "left".equals(update.getChatMember().getOldChatMember().getStatus()) && "member".equals(update.getChatMember().getNewChatMember().getStatus()) && (update.getChatMember().getChat().isGroupChat() || update.getChatMember().getChat().isSuperGroupChat())) {
-                    newMemberIntoGroup.handleMessage(sender, update, null);
+                if (update.getChatMember() != null) {
+                    String oldStatus = update.getChatMember().getOldChatMember() == null
+                            ? "null" : update.getChatMember().getOldChatMember().getStatus();
+                    String newStatus = update.getChatMember().getNewChatMember() == null
+                            ? "null" : update.getChatMember().getNewChatMember().getStatus();
+                    String memberChatId = update.getChatMember().getChat() == null
+                            ? "null" : update.getChatMember().getChat().getId().toString();
+                    String memberUserId = (update.getChatMember().getNewChatMember() == null
+                            || update.getChatMember().getNewChatMember().getUser() == null)
+                            ? "null" : update.getChatMember().getNewChatMember().getUser().getId().toString();
+                    // 诊断日志：bot 非本群管理员时收不到 chat_member 事件，这里一行都不会有
+                    log.warn("收到成员状态变更 chatId={}, userId={}, old={}, new={}",
+                            memberChatId, memberUserId, oldStatus, newStatus);
+                    if ("left".equals(oldStatus) && "member".equals(newStatus)
+                            && update.getChatMember().getChat() != null
+                            && (update.getChatMember().getChat().isGroupChat() || update.getChatMember().getChat().isSuperGroupChat())) {
+                        newMemberIntoGroup.handleMessage(sender, update, null);
+                    }
                 }
 
                 //检测新入群Bot

@@ -1,6 +1,7 @@
 package top.feiyangdigital.utils;
 
 import com.mchange.lang.IntegerUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Component;
@@ -27,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Date;
 
 @Component
+@Slf4j
 public class TimerDelete {
 
     @Autowired
@@ -137,17 +139,27 @@ public class TimerDelete {
 
     public void deleteMessageAndNotifyAfterDelay(AbsSender sender, SendMessage sendMessage, String chatId, Integer messageId, int delayInSeconds, Long userId, int notifyDelay) {
         Runnable task = () -> {
+            // 删除原消息与发送提示必须分开 try：原消息可能已被其他管理机器人抢先删除，
+            // 若两者放在同一个 try 里，删除报错会连带跳过提示，出现「只处置、不解释」的现象。
             try {
                 if (messageId != null) {
                     sender.execute(new DeleteMessage(chatId, messageId));
                 }
+            } catch (TelegramApiException e) {
+                log.warn("删除原消息失败（可能已被其他机器人删除）chatId={}, messageId={}, err={}", chatId, messageId, e.getMessage());
+            }
+            try {
                 captchaManager.clearMappingsForUser(userId.toString());
                 captchaManagerCacheMap.clearMappingsForUser(userId.toString(), chatId);
-                // 在此发送提示消息
+            } catch (Exception e) {
+                log.warn("清理验证缓存失败 userId={}, chatId={}, err={}", userId, chatId, e.getMessage());
+            }
+            try {
+                // 在此发送提示消息（无论删除是否成功都要发送）
                 Message message = sender.execute(sendMessage);
                 deleteMessageByMessageIdDelay(sender, chatId, message.getMessageId(), notifyDelay);
-            } catch (TelegramApiException e) {
-                // 如果您仍希望不论是否出现异常都发送提示，那么将发送提示的逻辑移至catch块外部
+            } catch (Exception e) {
+                log.error("发送提示消息失败 chatId={}, userId={}, err={}", chatId, userId, e.getMessage());
             }
         };
         taskScheduler.schedule(task, Instant.now().plusSeconds(delayInSeconds));
@@ -193,13 +205,24 @@ public class TimerDelete {
 
     public Integer deleteMessageImmediatelyAndNotifyAfterDelay(AbsSender sender, Object sendRealType, String chatId, Integer messageId, Long userId, int notifyDelay) {
         Integer msgId = 0;
-        try {
-            if (messageId != null) {
+        // 1) 删除违规消息：失败（常见于群内还有别的管理机器人，如 nmBot，已经抢先删掉）
+        //    绝不能影响后续的「提示」与「处置」，否则用户只会看到被禁言、却不知道原因。
+        if (messageId != null) {
+            try {
                 sender.execute(new DeleteMessage(chatId, messageId));
+            } catch (TelegramApiException e) {
+                log.warn("删除违规消息失败（可能已被其他机器人删除）chatId={}, messageId={}, err={}", chatId, messageId, e.getMessage());
             }
+        }
+        // 2) 清理验证缓存
+        try {
             captchaManager.clearMappingsForUser(userId.toString());
             captchaManagerCacheMap.clearMappingsForUser(userId.toString(), chatId);
-            // 在此发送提示消息
+        } catch (Exception e) {
+            log.warn("清理验证缓存失败 userId={}, chatId={}, err={}", userId, chatId, e.getMessage());
+        }
+        // 3) 发送处置提示：必须与删除解耦，保证「为什么被处置」一定说得清楚
+        try {
             Message message;
             if (sendRealType instanceof SendMessage) {
                 message = sender.execute((SendMessage) sendRealType);
@@ -212,8 +235,8 @@ public class TimerDelete {
             }
             msgId = message.getMessageId();
             deleteMessageByMessageIdDelay(sender, chatId, msgId, notifyDelay);
-        } catch (TelegramApiException e) {
-            // 这里可以捕获异常，但是我们可以选择不执行任何操作，因为我们不关心消息是否确实已经被删除
+        } catch (Exception e) {
+            log.error("发送违规提示失败 chatId={}, userId={}, err={}", chatId, userId, e.getMessage());
         }
         return msgId;
     }
