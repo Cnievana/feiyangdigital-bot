@@ -1,29 +1,31 @@
 #!/bin/bash
+# =============================================================================
+# 兼容旧入口：保留 start.sh 文件名，实际转发到全新的安装脚本。
+#
+# 与上游版本的区别（重要）：
+#   - 上游会 rm -rf /home/feiyangdigitalbotconf（**会连带删掉 config.json**），
+#     再从上游仓库下载 bot.sql / config.json / docker-compose.yml，
+#     而本 fork 的 config.json 字段与数据库结构都和上游不同，照做会装成上游版本。
+#   - 这里改为调用本仓库的 deploy/install.sh：不删数据、不覆盖已有配置、镜像指向本 fork。
+#
+# 用法：
+#   bash start.sh             # 安装
+#   bash start.sh --upgrade   # 升级镜像
+# =============================================================================
+set -euo pipefail
 
-# 定义下载路径
-DIR="/home/feiyangdigitalbotconf"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 定义要下载的文件的URL
-URLS=(
-    "https://ghproxy.com/https://raw.githubusercontent.com/youshandefeiyang/feiyangdigital-bot/main/config/bot.sql"
-    "https://ghproxy.com/https://raw.githubusercontent.com/youshandefeiyang/feiyangdigital-bot/main/config/config.json"
-    "https://ghproxy.com/https://raw.githubusercontent.com/youshandefeiyang/feiyangdigital-bot/main/docker-compose.yml"
-)
-
-# 检查目录是否存在，如果存在则删除并重新创建
-if [ -d "$DIR" ]; then
-    rm -rf "$DIR"
+if [ -f "$SCRIPT_DIR/deploy/install.sh" ]; then
+    exec bash "$SCRIPT_DIR/deploy/install.sh" "$@"
 fi
-mkdir -p "$DIR"
 
-# 使用curl下载文件
-for url in "${URLS[@]}"; do
-    filename=$(basename "$url")
-    if ! curl -o "$DIR/$filename" "$url"; then
-        echo -e "\e[31m网络错误：无法从$url下载文件\e[0m" # 使用红色字体显示错误信息
-        exit 1
-    fi
-done
-
-# 所有文件下载完成后的提示
-echo -e "\e[31m请在/home/feiyangdigitalbotconf/config.json中填写你的bot配置信息\e[0m" # 使用红色字体显示提示信息
+# 单独下载本文件运行（没有仓库其它文件）时，先把安装脚本拉下来
+RAW_BASE="${RAW_BASE:-https://raw.githubusercontent.com/Cnievana/feiyangdigital-bot/main}"
+TMP_SH="$(mktemp /tmp/feiyang-install.XXXXXX.sh)"
+echo "正在下载安装脚本：$RAW_BASE/deploy/install.sh"
+curl -fsSL "$RAW_BASE/deploy/install.sh" -o "$TMP_SH" || {
+    echo "下载安装脚本失败，请检查网络，或克隆仓库后执行 bash deploy/install.sh" >&2
+    exit 1
+}
+exec bash "$TMP_SH" "$@"

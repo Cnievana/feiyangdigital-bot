@@ -174,7 +174,7 @@ public class AiCheckMessage {
             Integer spamChance = result.getSpamChance();
             String spamReason = result.getSpamReason();
             if (spamChance == null) {
-                log.warn("AI检测返回JSON缺少spamChance，跳过本次检测。返回内容：{}", jsonObject);
+                log.warn("AI检测返回JSON缺少spamChance，跳过本次检测。返回内容：{}", rawContent);
                 return;
             }
             BotRecord botRecord1 = new BotRecord();

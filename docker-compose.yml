@@ -1,12 +1,16 @@
-version: '3'
-
+# 用户侧部署用的 compose（与 deploy/docker-compose.yml 一致）
+#
+# 注意：上游那份 compose 的 image 是 youshandefeiyang/feiyangdigital-bot:latest，
+# 本 fork 改了源码并新增数据库字段，直接用上游镜像会报 Unknown column。
+# 镜像地址由同目录 .env 里的 BOT_IMAGE 决定，未设置时用下面的默认值。
 services:
   feiyangdigital-bot:
-    image: youshandefeiyang/feiyangdigital-bot:latest # 使用您在DockerHub上的镜像
-    ports:
-      - "38455:8080"
+    image: ${BOT_IMAGE:-nievana/feiyangdigital-bot:latest}
+    # longPolling 模式不需要暴露端口；如要切 webhook 再打开下面这几行
+    # ports:
+    #   - "38455:8080"
     volumes:
-      - /home/feiyangdigitalbotconf/config.json:/app/config.json
+      - ${BOT_CONF_DIR:-/home/feiyangdigitalbotconf}/config.json:/app/config.json
     restart: unless-stopped
     depends_on:
       - mysql
@@ -16,6 +20,7 @@ services:
       - SPRING_DATASOURCE_USERNAME=root
       - SPRING_DATASOURCE_PASSWORD=password
       - SPRING_DATASOURCE_DRIVER_CLASS_NAME=com.mysql.cj.jdbc.Driver
+      - TZ=Asia/Shanghai
 
   mysql:
     image: mysql:8.0
@@ -28,7 +33,9 @@ services:
       MYSQL_ROOT_HOST: '%'
     volumes:
       - mysql-data:/var/lib/mysql
-      - /home/feiyangdigitalbotconf/bot.sql:/docker-entrypoint-initdb.d/bot.sql
+      # 注意：/docker-entrypoint-initdb.d 只会在数据卷为空时执行一次。
+      # 老库升级靠机器人启动时的自动迁移（SchemaMigrator）补齐缺失字段。
+      - ${BOT_CONF_DIR:-/home/feiyangdigitalbotconf}/bot.sql:/docker-entrypoint-initdb.d/bot.sql
     restart: unless-stopped
 
   redis:

@@ -2,7 +2,10 @@
 # ↑ 声明使用最新 Dockerfile 语法，确保下面的 --mount=type=cache 可用
 
 # ==================== 构建阶段 ====================
-FROM maven:3.9.14-eclipse-temurin-17 AS build
+# --platform=$BUILDPLATFORM：用构建机自身架构跑 Maven。
+# 本项目产物是纯 Java jar（与架构无关），这样可以「在 amd64 上构建一次、同时供 arm64 使用」，
+# 避免 mvn 在 QEMU 模拟的 arm64 里跑 20 分钟。
+FROM --platform=$BUILDPLATFORM maven:3.9.14-eclipse-temurin-17 AS build
 
 WORKDIR /app
 
@@ -31,12 +34,13 @@ RUN apt-get update \
 # 设置应用的目录结构
 WORKDIR /app
 
-# 从构建阶段复制构建的jar文件和src目录
+# 从构建阶段复制 jar（资源文件已全部打进 jar，无需再额外拷贝 src 目录）
 COPY --from=build /app/target/*.jar app.jar
-COPY --from=build /app/src/ /app/src/
 
 # 设置Java的Headless模式（key=value 写法）
 ENV JAVA_TOOL_OPTIONS="-Djava.awt.headless=true"
 
+# MaxRAMPercentage：让 JVM 按容器内存比例取堆（默认 25% 在 1C1G 小机器上偏小），
+# 75% 是容器场景的常用取值；如需自定义可用 docker run -e JAVA_TOOL_OPTIONS="..." 覆盖
 # 设置启动命令
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]

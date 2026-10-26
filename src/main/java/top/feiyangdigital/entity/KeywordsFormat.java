@@ -34,6 +34,12 @@ public class KeywordsFormat {
                 this.photoUrl = action.substring(6);
             } else if (action.startsWith("video=")) {
                 this.videoUrl = action.substring(6);
+            } else if (action.startsWith("botBan=")) {
+                // botBan=：只对「机器人 / 通过机器人发送」的群聊正文生效，命中即删消息 + 封禁。
+                // 不需要回复文案，也不向群里发通知；BotOnly 标记让 MessageHandle 在编译正则之前
+                // 就把非 bot 消息跳过，普通用户零误伤。
+                ruleMap.put("BotOnly", "true");
+                ruleMap.put("BotBanAfterXSeconds", action.substring(7).split("、")[0].split("=")[1]);
             } else if (action.startsWith("del=")) {
                 ruleMap.put("DeleteAfterXSeconds", action.substring(4).split("、")[0].split("=")[1]);
                 ruleMap.put("DeleteReplyAfterYSeconds", action.substring(4).split("、")[1].split("=")[1]);
@@ -44,6 +50,11 @@ public class KeywordsFormat {
             } else if (action.startsWith("crontab=")) {
                 ruleMap.put("crontabOption",action.substring(8));
             }
+        }
+        // botBan 规则不需要回复文案。为空时补一个纯展示文案，
+        // 否则「规则添加成功」的回显消息会因文本为空被 Telegram 拒绝（400 message text is empty）。
+        if ((this.replyText == null || this.replyText.trim().isEmpty()) && ruleMap.containsKey("BotOnly")) {
+            this.replyText = "【广告机器人封禁规则】只对机器人发送的正文生效，命中即删除消息并封禁，不发送群内通知。";
         }
     }
 

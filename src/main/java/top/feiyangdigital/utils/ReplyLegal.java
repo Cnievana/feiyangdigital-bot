@@ -24,8 +24,18 @@ public class ReplyLegal {
         String[] conditions = mainParts[1].split("&&");
         if (conditions.length < 1 || conditions.length > 4) return false;
 
+        // botBan 是静默处置（只删消息 + 封禁，不发任何回复），因此允许文案为空：
+        // 这类规则的写法是「正则===&&botBan=x=0」
+        boolean hasBotBan = false;
+        for (int i = 1; i < conditions.length; i++) {
+            if (conditions[i].startsWith("botBan=")) {
+                hasBotBan = true;
+                break;
+            }
+        }
+
         // 验证消息部分
-        if (conditions[0].isEmpty()) return false;
+        if (conditions[0].isEmpty() && !hasBotBan) return false;
 
         boolean hasBtns = false, hasPhoto = false, hasVideo = false;
 
@@ -62,7 +72,7 @@ public class ReplyLegal {
             if (botActionParts.length == 1) return false;
             // 确保操作有效
             String operation = botActionParts[0];
-            if (!Arrays.asList("del", "kick", "ban", "intoGroupBan", "crontab", "welcome").contains(operation))
+            if (!Arrays.asList("del", "kick", "ban", "intoGroupBan", "crontab", "welcome", "botBan").contains(operation))
                 return false;
 
             // 如果只有操作和字符串（针对部分群组设置）

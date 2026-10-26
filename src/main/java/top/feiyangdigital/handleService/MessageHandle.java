@@ -12,6 +12,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import top.feiyangdigital.entity.KeywordsFormat;
 import top.feiyangdigital.utils.SendContent;
 import top.feiyangdigital.utils.TimerDelete;
+import top.feiyangdigital.utils.aiMessageCheck.BotSpamGuard;
 
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,9 @@ public class MessageHandle {
     @Autowired
     private SendContent sendContent;
 
+    @Autowired
+    private BotSpamGuard botSpamGuard;
+
     public boolean processUserMessage(AbsSender sender, Update update, List<KeywordsFormat> keywordsList) throws TelegramApiException {
         String messageText = update.getMessage().getText();
         StringBuilder buttonBuilder = new StringBuilder();
@@ -34,14 +38,35 @@ public class MessageHandle {
         }
         String buttonText = "" + buttonBuilder;
         Long userId = update.getMessage().getFrom().getId();
+        String chatId = update.getMessage().getChatId().toString();
+        Integer messageId = update.getMessage().getMessageId();
 
         // 如果消息文本为null，直接返回，不做处理
         if (!StringUtils.hasText(messageText) && !StringUtils.hasText(buttonText)) {
             return true;
         }
 
+        // 「机器人账号 / 通过机器人发送」标记：只服务于 botBan 规则，普通用户完全不受影响
+        boolean botSender = botSpamGuard.isBotSender(update.getMessage());
+
         for (KeywordsFormat keywordFormat : keywordsList) {
             Map<String, String> currentMap = keywordFormat.getRuleMap();
+
+            // botBan：只检测机器人发送的群聊正文。
+            // 非 bot 消息直接跳过（连正则都不编译）→ 普通用户零误伤；
+            // 命中后立即删消息 + 封禁并 return true → 调用方据此跳过 AI 检测，省下全部 token。
+            if (currentMap.containsKey("BotOnly")) {
+                if (!botSender) {
+                    continue;
+                }
+                if (Pattern.compile(keywordFormat.getRegex()).matcher(messageText).find()) {
+                    botSpamGuard.punish(sender, chatId, messageId, update.getMessage(), keywordFormat.getUuid(),
+                            currentMap.get("BotBanAfterXSeconds"));
+                    return true;
+                }
+                continue;
+            }
+
             String regex = keywordFormat.getRegex();
             Pattern pattern = Pattern.compile(regex);
 
