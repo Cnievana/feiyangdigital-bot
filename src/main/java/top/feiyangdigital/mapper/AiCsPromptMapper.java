@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 import org.springframework.stereotype.Repository;
 import top.feiyangdigital.entity.AiCsPrompt;
 
@@ -44,6 +45,18 @@ public interface AiCsPromptMapper {
     /** 删除某群的指定条目。 */
     @Delete("delete from ai_cs_prompt where id = #{id} and groupId = #{groupId}")
     int deleteByIdAndGroupId(@Param("id") Integer id, @Param("groupId") String groupId);
+
+    /** 修改条目名称（同时校验所属群，避免越权修改）。 */
+    @Update("update ai_cs_prompt set title = #{title}, updateTimestamp = #{updateTimestamp} " +
+            "where id = #{id} and groupId = #{groupId}")
+    int updateTitleByIdAndGroupId(@Param("id") Integer id, @Param("groupId") String groupId,
+                                  @Param("title") String title, @Param("updateTimestamp") String updateTimestamp);
+
+    /** 修改条目正文（同时校验所属群，避免越权修改）。 */
+    @Update("update ai_cs_prompt set prompt = #{prompt}, updateTimestamp = #{updateTimestamp} " +
+            "where id = #{id} and groupId = #{groupId}")
+    int updatePromptByIdAndGroupId(@Param("id") Integer id, @Param("groupId") String groupId,
+                                   @Param("prompt") String prompt, @Param("updateTimestamp") String updateTimestamp);
 
     /** 清空某群全部条目。 */
     @Delete("delete from ai_cs_prompt where groupId = #{groupId}")

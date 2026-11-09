@@ -45,6 +45,8 @@ public class SetAiCsMenu {
     /** 进入 AI 客服主菜单。 */
     public void hadleCallBack(AbsSender sender, Update update) throws TelegramApiException {
         String userId = update.getCallbackQuery().getFrom().getId().toString();
+        // 从「等待输入」状态返回主菜单时，必须清掉 flag，避免下一条文本被当成新内容
+        aiCsCacheMap.clearFlag(userId);
         sender.execute(sendContent.editResponseMessage(update, buildMenu(userId, null), "html"));
     }
 
@@ -153,7 +155,7 @@ public class SetAiCsMenu {
 
         List<String> buttons = new ArrayList<>();
         buttons.add("🔛客服总开关（" + cn(aiCsFlag) + "）##aiCsToggle");
-        buttons.add("➕添加知识条目##aiCsAdd%%📋查看/删除条目##aiCsList");
+        buttons.add("➕添加知识条目##aiCsAdd%%📋查看/修改条目##aiCsList");
         buttons.add("⚙️群内触发方式（" + triggerCn(triggerMode) + "）##aiCsTrigger");
         buttons.add("💬私聊客服（" + cn(privateFlag) + "）##aiCsPrivateToggle");
         buttons.add("◀️返回主菜单##backMainMenu%%❌关闭菜单##closeMenu");

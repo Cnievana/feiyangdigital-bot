@@ -25,6 +25,7 @@ import top.feiyangdigital.sqlService.GroupInfoService;
 import top.feiyangdigital.utils.SendContent;
 import top.feiyangdigital.utils.TimerDelete;
 import top.feiyangdigital.utils.aiMessageCheck.AiResultParser;
+import top.feiyangdigital.utils.aiMessageCheck.ViolationNoticeAggregator;
 import top.feiyangdigital.utils.groupCaptch.CaptchaManagerCacheMap;
 import top.feiyangdigital.utils.groupCaptch.GroupMessageIdCacheMap;
 import top.feiyangdigital.utils.groupCaptch.RestrictOrUnrestrictUser;
@@ -52,6 +53,9 @@ public class NewMemberIntoGroup {
 
     @Autowired
     private TimerDelete timerDelete;
+
+    @Autowired
+    private ViolationNoticeAggregator violationNoticeAggregator;
 
     @Autowired
     private CaptchaManagerCacheMap captchaManagerCacheMap;
@@ -218,7 +222,14 @@ public class NewMemberIntoGroup {
                                 || (StringUtils.hasText(bio) && pattern.matcher(bio).find())
                                 || (StringUtils.hasText(channelProfile) && pattern.matcher(channelProfile).find());
                         if (matched) {
-                            restrictOrUnrestrictUser.restrictUser(sender, userId, chatId.toString(), 0L);
+                            // 昵称不会在一秒内改变：同一用户的多条消息各触发一次禁言时，
+                            // 每次 RestrictChatMember 都会多出一条「修改了对xxx的限制」系统消息
+                            if (!violationNoticeAggregator.isRecentlyPunished(chatId.toString(), userId.toString())) {
+                                boolean restricted = restrictOrUnrestrictUser.restrictUser(sender, userId, chatId.toString(), 0L);
+                                if (restricted) {
+                                    violationNoticeAggregator.markPunished(chatId.toString(), userId.toString());
+                                }
+                            }
                             KeywordsFormat newKeyFormat = new KeywordsFormat();
                             newKeyFormat.setKeywordsButtons(keywordFormat.getKeywordsButtons());
                             String text = keywordFormat.getReplyText()
@@ -231,9 +242,14 @@ public class NewMemberIntoGroup {
                             }
                             SendMessage sendMessage = (SendMessage) sendContent.createGroupMessage(chatId.toString(), newKeyFormat, "html");
                             sendMessage.setDisableWebPagePreview(true);
-                            String msgId = timerDelete.sendTimedMessage(sender, sendMessage, Integer.parseInt(currentMap.get("DelIntoGroupBan")));
-                            if (StringUtils.hasText(msgId)) {
-                                captchaManagerCacheMap.updateUserMapping(userId.toString(), chatId.toString(), 0, Integer.valueOf(msgId));
+                            // 昵称/简介正则命中的处置通知，同样进入 20 秒合并窗口。
+                            // 保留时长统一为 30 秒（不再取规则里的 DelIntoGroupBan）：
+                            // 该规则配置的是「规则提示保留多久」，与「违规警告」的展示时长语义不同，
+                            // 统一 30 秒可避免同一波广告出现「这条 30 秒、那条 5 分钟」的不一致。
+                            Integer msgId = violationNoticeAggregator.notify(sender, chatId.toString(), sendMessage,
+                                    ViolationNoticeAggregator.DEFAULT_DELETE_SECONDS);
+                            if (msgId != null && msgId > 0) {
+                                captchaManagerCacheMap.updateUserMapping(userId.toString(), chatId.toString(), 0, msgId);
                             }
                             return true;
                         }
@@ -283,15 +299,19 @@ public class NewMemberIntoGroup {
             return false;
         }
         String spamReason = result.getSpamReason();
-        restrictOrUnrestrictUser.restrictUser(sender, userId, chatId.toString(), 0L);
+        boolean restricted = restrictOrUnrestrictUser.restrictUser(sender, userId, chatId.toString(), 0L);
+        if (restricted) {
+            violationNoticeAggregator.markPunished(chatId.toString(), userId.toString());
+        }
         String text = String.format("用户 <b><a href=\"tg://user?id=%d\">%s</a></b> 因昵称/简介/个人频道被AI判定为广告，已被永久限制发言！\n判定原因：<tg-spoiler>%s</tg-spoiler>",
                 userId, firstName, spamReason == null ? "" : spamReason);
         SendMessage notification = new SendMessage();
         notification.setChatId(chatId);
         notification.setText(text);
         notification.setParseMode(ParseMode.HTML);
-        // 提示消息 60 秒后自动删除，避免刷屏
-        timerDelete.sendTimedMessage(sender, notification, 60);
+        // 提示消息进入 20 秒合并窗口（窗口内的后续违规会编辑这一条而不是另发一条）
+        violationNoticeAggregator.notify(sender, chatId.toString(), notification,
+                ViolationNoticeAggregator.DEFAULT_DELETE_SECONDS);
         return true;
     }
 

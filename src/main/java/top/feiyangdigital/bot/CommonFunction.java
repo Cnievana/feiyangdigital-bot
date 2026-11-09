@@ -17,6 +17,7 @@ import org.telegram.telegrambots.meta.api.objects.messageorigin.MessageOriginCha
 import org.telegram.telegrambots.meta.bots.AbsSender;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import top.feiyangdigital.callBack.aiCsCallBack.AddAiCsPrompt;
+import top.feiyangdigital.callBack.aiCsCallBack.EditAiCsPrompt;
 import top.feiyangdigital.callBack.deleteRuleCallBack.DeleteSingleRuleByKeyWord;
 import top.feiyangdigital.callBack.replyRuleCallBack.AddAutoReplyRule;
 import top.feiyangdigital.entity.BaseInfo;
@@ -93,6 +94,9 @@ public class CommonFunction {
 
     @Autowired
     private AddAiCsPrompt addAiCsPrompt;
+
+    @Autowired
+    private EditAiCsPrompt editAiCsPrompt;
 
     @Autowired
     private AiCsCacheMap aiCsCacheMap;
@@ -322,16 +326,23 @@ public class CommonFunction {
                         botHelper.sendGroupList(sender, update);
                     } else {
                         String userId = update.getMessage().getFrom().getId().toString();
+                        String aiCsFlag = aiCsCacheMap.getFlagForUser(userId);
                         if ("allow".equals(addRuleCacheMap.getKeywordsFlagForUser(userId))) {
                             addAutoReplyRule.addNewRule(sender, update);
                         } else if ("candelete".equals(deleteRuleCacheMap.getDeleteKeywordFlagMap(userId))) {
                             deleteSingleRuleByKeyWord.DeleteOption(sender, update);
-                        } else if ("addPrompt".equals(aiCsCacheMap.getFlagForUser(userId))) {
+                        } else if ("addPrompt".equals(aiCsFlag)) {
                             // AI客服：正在输入知识条目
                             addAiCsPrompt.addNewPrompt(sender, update);
-                        } else if ("setKeyword".equals(aiCsCacheMap.getFlagForUser(userId))) {
+                        } else if ("setKeyword".equals(aiCsFlag)) {
                             // AI客服：正在输入触发关键词
                             addAiCsPrompt.setKeyword(sender, update);
+                        } else if (aiCsFlag != null && aiCsFlag.startsWith(EditAiCsPrompt.FLAG_TITLE_PREFIX)) {
+                            // AI客服：正在输入新的条目名称
+                            editAiCsPrompt.saveTitle(sender, update);
+                        } else if (aiCsFlag != null && aiCsFlag.startsWith(EditAiCsPrompt.FLAG_CONTENT_PREFIX)) {
+                            // AI客服：正在输入新的条目正文
+                            editAiCsPrompt.saveContent(sender, update);
                         } else if (StringUtils.hasText(captchaManager.getAnswerForUser(userId))) {
                             captchaGenerator.answerReplyhandle(sender, update);
                         } else {

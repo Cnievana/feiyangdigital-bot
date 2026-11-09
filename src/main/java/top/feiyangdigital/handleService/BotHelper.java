@@ -14,6 +14,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import top.feiyangdigital.callBack.CommonCallBack;
 import top.feiyangdigital.callBack.PanelMenu;
 import top.feiyangdigital.callBack.aiCsCallBack.DeleteAiCsPrompt;
+import top.feiyangdigital.callBack.aiCsCallBack.EditAiCsPrompt;
 import top.feiyangdigital.callBack.aiCsCallBack.SetAiCsMenu;
 import top.feiyangdigital.callBack.deleteRuleCallBack.SetDeleteView;
 import top.feiyangdigital.callBack.groupSetting.SetGroupSettingView;
@@ -84,6 +85,9 @@ public class BotHelper {
 
     @Autowired
     private DeleteAiCsPrompt deleteAiCsPrompt;
+
+    @Autowired
+    private EditAiCsPrompt editAiCsPrompt;
 
     @Autowired
     private DeleteGropuRuleMap deleteGropuRuleMap;
@@ -417,6 +421,22 @@ public class BotHelper {
                 timerDelete.deletePrivateUsualMessageImmediately(sender, update);
                 return;
             default:
+        }
+
+        // AI 客服：查看 / 编辑知识条目（回调数据形如 aiCsView12、aiCsEditTitle12）
+        if (callbackData.startsWith("aiCsView")) {
+            editAiCsPrompt.showDetail(sender, update);
+            return;
+        }
+
+        if (callbackData.startsWith("aiCsEditTitle")) {
+            editAiCsPrompt.promptEditTitle(sender, update);
+            return;
+        }
+
+        if (callbackData.startsWith("aiCsEditContent")) {
+            editAiCsPrompt.promptEditContent(sender, update);
+            return;
         }
 
         // AI 客服：删除知识条目（回调数据形如 aiCsDel12）

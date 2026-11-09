@@ -28,7 +28,6 @@ import top.feiyangdigital.sqlService.BotRecordService;
 import top.feiyangdigital.sqlService.GroupInfoService;
 import top.feiyangdigital.utils.CheckUser;
 import top.feiyangdigital.utils.MatchList;
-import top.feiyangdigital.utils.TimerDelete;
 import top.feiyangdigital.utils.groupCaptch.CaptchaManagerCacheMap;
 import top.feiyangdigital.utils.groupCaptch.RestrictOrUnrestrictUser;
 
@@ -42,7 +41,7 @@ import java.util.regex.Pattern;
 public class AiCheckMessage {
 
     @Autowired
-    private TimerDelete timerDelete;
+    private ViolationNoticeAggregator violationNoticeAggregator;
 
     @Autowired
     private GroupInfoService groupInfoService;
@@ -221,13 +220,9 @@ public class AiCheckMessage {
         if (punished && !botTarget) {
             notification.setReplyMarkup(buildUnmuteMarkup(userId));
         }
-        Long uid;
-        try {
-            uid = Long.valueOf(userId);
-        } catch (NumberFormatException e) {
-            uid = 0L;
-        }
-        Integer notifyMessageId = timerDelete.deleteMessageImmediatelyAndNotifyAfterDelay(sender, notification, groupId, messageId, uid, 90);
+        // 20 秒窗口内的多条违规通知合并成一条（编辑上一条），避免一波广告刷出 4~5 条提醒
+        Integer notifyMessageId = violationNoticeAggregator.notifyViolation(sender, groupId, userId, messageId, notification,
+                ViolationNoticeAggregator.DEFAULT_DELETE_SECONDS);
         if (punished && !botTarget && notifyMessageId != null && notifyMessageId > 0) {
             captchaManagerCacheMap.updateUserMapping(userId, groupId, 0, notifyMessageId);
         }
@@ -272,6 +267,12 @@ public class AiCheckMessage {
         } catch (NumberFormatException e) {
             return false;
         }
+        // 同一用户 60 秒内只实际处置一次：多广告号往往在同一秒被同一波广告带进来，
+        // 每次 RestrictChatMember 都会多出一条「修改了对xxx的限制」系统消息，无法编辑合并。
+        if (violationNoticeAggregator.isRecentlyPunished(groupId, userId)) {
+            log.warn("60 秒内已处置过该用户，跳过重复禁言/封禁 groupId={}, userId={}", groupId, userId);
+            return true;
+        }
         if (!botTarget) {
             try {
                 if (checkUser.isGroupAdmin(sender, groupId, uid)) {
@@ -284,10 +285,16 @@ public class AiCheckMessage {
             }
             // seconds = 0 → 永久禁言（项目约定，见 RestrictOrUnrestrictUser.commonFunc）
             boolean muted = restrictOrUnrestrictUser.restrictUser(sender, uid, groupId, 0L);
+            if (muted) {
+                violationNoticeAggregator.markPunished(groupId, userId);
+            }
             log.warn("AI判定违规自动禁言 groupId={}, userId={}, 结果={}", groupId, userId, muted ? "成功（永久）" : "失败");
             return muted;
         }
         boolean banned = banBotMember(sender, groupId, uid);
+        if (banned) {
+            violationNoticeAggregator.markPunished(groupId, userId);
+        }
         log.warn("AI判定违规自动移出机器人 groupId={}, userId={}, 结果={}", groupId, userId, banned ? "成功" : "失败");
         return banned;
     }

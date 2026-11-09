@@ -17,6 +17,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <ul>
  *     <li>{@code addPrompt} —— 等待输入知识条目</li>
  *     <li>{@code setKeyword} —— 等待输入关键词</li>
+ *     <li>{@code editPromptTitle:<id>} —— 等待输入某条目的新名称</li>
+ *     <li>{@code editPromptContent:<id>} —— 等待输入某条目的新正文</li>
  *     <li>{@code notallow} —— 空闲</li>
  * </ul>
  *

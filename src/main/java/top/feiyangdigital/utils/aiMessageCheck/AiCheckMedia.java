@@ -18,7 +18,6 @@ import top.feiyangdigital.entity.GroupInfoWithBLOBs;
 import top.feiyangdigital.handleService.GoogleCloudVisionService;
 import top.feiyangdigital.sqlService.BotRecordService;
 import top.feiyangdigital.sqlService.GroupInfoService;
-import top.feiyangdigital.utils.TimerDelete;
 import top.feiyangdigital.utils.groupCaptch.RestrictOrUnrestrictUser;
 
 import java.io.File;
@@ -28,7 +27,7 @@ import java.util.List;
 public class AiCheckMedia {
 
     @Autowired
-    private TimerDelete timerDelete;
+    private ViolationNoticeAggregator violationNoticeAggregator;
 
     @Autowired
     private GroupInfoService groupInfoService;
@@ -64,8 +63,15 @@ public class AiCheckMedia {
                     notification.setChatId(groupId);
                     notification.setText(text + "\n" + otherText);
                     notification.setParseMode(ParseMode.HTML);
-                    timerDelete.deleteMessageImmediatelyAndNotifyAfterDelay(sender, notification, groupId, messageId, Long.valueOf(userId), 90);
-                    restrictOrUnrestrictUser.restrictUser(sender, Long.valueOf(userId), groupId, 0L);
+                    // 同上：窗口内的多条通知合并为一条
+                    violationNoticeAggregator.notifyViolation(sender, groupId, userId, messageId, notification,
+                            ViolationNoticeAggregator.DEFAULT_DELETE_SECONDS);
+                    if (!violationNoticeAggregator.isRecentlyPunished(groupId, userId)) {
+                        boolean restricted = restrictOrUnrestrictUser.restrictUser(sender, Long.valueOf(userId), groupId, 0L);
+                        if (restricted) {
+                            violationNoticeAggregator.markPunished(groupId, userId);
+                        }
+                    }
                     return;
                 } else if (normalCount >= 5) {
                     return;

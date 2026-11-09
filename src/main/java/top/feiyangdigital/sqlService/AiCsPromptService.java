@@ -57,6 +57,25 @@ public class AiCsPromptService {
         return aiCsPromptMapper.deleteByIdAndGroupId(id, groupId) > 0;
     }
 
+    /**
+     * 修改条目名称并清缓存。
+     * <p>
+     * 必须 evict：ehcache 的 aiCsPrompt 是 eternal=true，不清缓存的话
+     * 运行时拼接 system prompt 仍然会用到旧名称下的旧内容。
+     */
+    @CacheEvict(value = "aiCsPrompt", key = "#groupId")
+    public boolean updateTitle(Integer id, String groupId, String title) {
+        return aiCsPromptMapper.updateTitleByIdAndGroupId(id, groupId, title,
+                String.valueOf(System.currentTimeMillis())) > 0;
+    }
+
+    /** 修改条目正文并清缓存（理由同 {@link #updateTitle}）。 */
+    @CacheEvict(value = "aiCsPrompt", key = "#groupId")
+    public boolean updatePrompt(Integer id, String groupId, String prompt) {
+        return aiCsPromptMapper.updatePromptByIdAndGroupId(id, groupId, prompt,
+                String.valueOf(System.currentTimeMillis())) > 0;
+    }
+
     /** 清空某群条目并清缓存。 */
     @CacheEvict(value = "aiCsPrompt", key = "#groupId")
     public boolean clearByGroupId(String groupId) {
