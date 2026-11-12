@@ -28,17 +28,8 @@ import java.time.ZonedDateTime;
 @Component
 public class BotSpamGuard {
 
-    /**
-     * 匿名管理员（GroupAnonymousBot）。它的 {@code from.isBot} 也是 true，
-     * 如果只按 isBot 判断，会把群里的匿名管理员当成广告机器人封掉。
-     */
-    private static final long ANONYMOUS_ADMIN_ID = 1087968824L;
-
-    /** 频道身份发言（Channel_Bot）。封掉它会破坏群与频道的绑定关系。 */
-    private static final long CHANNEL_BOT_ID = 136817688L;
-
-    /** Telegram 官方服务通知账号（入群、退群等系统消息）。 */
-    private static final long SERVICE_NOTICE_ID = 777000L;
+    // 匿名管理员 / 频道身份发言 / Telegram 服务通知账号的 ID 统一定义在 MessageSourceGuard，
+    // 避免两处各写一套、以后改一处漏一处。
 
     @Autowired
     private CheckUser checkUser;
@@ -64,8 +55,14 @@ public class BotSpamGuard {
         if (message == null || message.getFrom() == null) {
             return false;
         }
+        // 关联频道自动转发 / 频道身份发言：都不是普通用户，不能走 botBan 处置
+        if (message.getSenderChat() != null) {
+            return false;
+        }
         long uid = message.getFrom().getId();
-        if (uid == ANONYMOUS_ADMIN_ID || uid == CHANNEL_BOT_ID || uid == SERVICE_NOTICE_ID) {
+        if (uid == MessageSourceGuard.ANONYMOUS_ADMIN_ID
+                || uid == MessageSourceGuard.CHANNEL_BOT_ID
+                || uid == MessageSourceGuard.SERVICE_NOTICE_ID) {
             return false;
         }
         String botName = BaseInfo.getBotName();

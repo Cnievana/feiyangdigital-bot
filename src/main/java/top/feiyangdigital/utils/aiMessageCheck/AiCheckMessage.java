@@ -71,12 +71,20 @@ public class AiCheckMessage {
     private AiCustomerServiceHandler aiCustomerServiceHandler;
 
     public void checkMessage(AbsSender sender, Update update) throws TelegramApiException {
-        String groupId = update.getMessage().getChatId().toString();
-        String userId = update.getMessage().getFrom().getId().toString();
-        Integer messageId = update.getMessage().getMessageId();
-        String firstName = update.getMessage().getFrom().getFirstName();
-        String userName = StrUtil.concat(true, firstName, update.getMessage().getFrom().getLastName());
         Message message = update.getMessage();
+        // 系统 / 频道来源的消息不是「用户发言」，一律不送 AI 检测：
+        // 关联频道自动转发的帖子 from 是 Telegram 服务账号 777000，正文来自群主自己的频道，
+        // 送检必然被判成营销广告（实测 spamChance=9），结果是删掉频道帖子、并把 777000 当成用户禁言。
+        if (MessageSourceGuard.isSystemOrChannelMessage(message)) {
+            log.debug("系统/频道来源消息，跳过AI广告检测。chatId={}",
+                    message == null ? null : message.getChatId());
+            return;
+        }
+        String groupId = message.getChatId().toString();
+        String userId = message.getFrom().getId().toString();
+        Integer messageId = message.getMessageId();
+        String firstName = message.getFrom().getFirstName();
+        String userName = StrUtil.concat(true, firstName, message.getFrom().getLastName());
         String content = buildAnalyzeContent(userName, message);
         // 机器人账号 / 通过 inline bot（via_bot）发送的消息，是广告号绕过正常检测的典型手法；
         // 这类消息不受「正常发言累积到 5 条后免检」的保护，必须始终送检。
@@ -89,6 +97,12 @@ public class AiCheckMessage {
         }
         GroupInfoWithBLOBs groupInfoWithBLOBs = groupInfoService.selAllByGroupId(groupId);
         if (groupInfoWithBLOBs != null && "open".equals(groupInfoWithBLOBs.getAiflag()) && StringUtils.hasText(content)) {
+            // 管理员发言不送 AI 广告检测：禁言那一步才查管理员太晚了——
+            // 消息在判定为广告时就已经被删掉，管理员自己也救不回来。
+            if (isGroupAdminQuietly(sender, groupId, userId)) {
+                log.debug("发送者是管理员，跳过AI广告检测。groupId={}, userId={}", groupId, userId);
+                return;
+            }
             // 群内 @ 本机器人提问时，原消息会被模型当成「推广机器人 + 关键词」判成广告
             //（实测判定理由：包含@xxx机器人账号和"优惠码"，疑似推广某机器人）。
             // 这类消息本应由 AI 客服回答，直接跳过广告检测；上方的关键词删禁规则照常执行。
@@ -96,7 +110,7 @@ public class AiCheckMessage {
                 log.debug("消息命中AI客服触发条件，跳过AI广告检测。groupId={}, userId={}", groupId, userId);
                 return;
             }
-            contentAiOption(sender, groupId, userId, firstName, messageId, content, forceCheck);
+            contentAiOption(sender, groupId, userId, firstName, messageId, content, forceCheck, message.getFrom().getIsBot());
         }
     }
 
@@ -134,13 +148,24 @@ public class AiCheckMessage {
     }
 
     public void contentAiOption(AbsSender sender, String groupId, String userId, String firstName, Integer messageId, String content) {
-        contentAiOption(sender, groupId, userId, firstName, messageId, content, false);
+        contentAiOption(sender, groupId, userId, firstName, messageId, content, false, null);
     }
 
     /**
      * @param forceCheck 为 true 时忽略「正常发言累积免检」，始终送 AI 检测（机器人账号 / via_bot 消息）
      */
     public void contentAiOption(AbsSender sender, String groupId, String userId, String firstName, Integer messageId, String content, boolean forceCheck) {
+        contentAiOption(sender, groupId, userId, firstName, messageId, content, forceCheck, null);
+    }
+
+    /**
+     * @param senderIsBot 消息本身携带的「发送者是机器人账号」标志（{@code from.isBot}）。
+     *                    传 null 时处置前会回查群成员信息。
+     *                    <p>
+     *                    优先用消息自带的标志，是因为 {@code GetChatMember} 在目标刚退群 / 网络抖动时会失败：
+     *                    回查失败就直接放弃处置，真正还在群里的广告机器人就会漏封。
+     */
+    public void contentAiOption(AbsSender sender, String groupId, String userId, String firstName, Integer messageId, String content, boolean forceCheck, Boolean senderIsBot) {
         BotRecord botRecord = botRecordService.selBotRecordByGidAndUid(groupId, userId);
         // 原实现在 botRecord == null 时直接跳过整段检测：
         // 任何「没有入群登记」的发送者（尤其是被 @ 拉进群的广告机器人）发的广告都不会被删除。
@@ -149,7 +174,7 @@ public class AiCheckMessage {
         if (violationCount >= 5) {
             String text = String.format("用户 <b><a href=\"tg://user?id=%d\">%s</a></b> 已被AI检测违规超过5次，永久限制发言！", Long.valueOf(userId), firstName);
             String otherText = String.format("<b>违规用户UserID为：<a href=\"tg://user?id=%d\">%s</a></b>", Long.valueOf(userId), userId);
-            boolean punished = notifyViolation(sender, groupId, userId, messageId, text + "\n" + otherText);
+            boolean punished = notifyViolation(sender, groupId, userId, messageId, text + "\n" + otherText, senderIsBot);
             if (!punished) {
                 // 「违规超过 5 次」不受群开关影响，保持原本的永久限制行为
                 restrictOrUnrestrictUser.restrictUser(sender, Long.valueOf(userId), groupId, 0L);
@@ -181,7 +206,7 @@ public class AiCheckMessage {
                 String text = String.format("用户 <b><a href=\"tg://user?id=%d\">%s</a></b> 已被AI检测发送违规词，判断原因如下：\n<tg-spoiler>%s</tg-spoiler>", Long.valueOf(userId), firstName, spamReason);
                 String otherText = String.format("<b>违规用户UserID为：<a href=\"tg://user?id=%d\">%s</a></b>", Long.valueOf(userId), userId);
                 // 群开启「AI违规自动禁言」时，命中即永久禁言（文案与解禁按钮由 notifyViolation 统一处理）
-                notifyViolation(sender, groupId, userId, messageId, text + "\n" + otherText);
+                notifyViolation(sender, groupId, userId, messageId, text + "\n" + otherText, senderIsBot);
                 botRecord1.setViolationcount(violationCount + 1);
             } else {
                 botRecord1.setNormalcount(normalCount + 1);
@@ -205,8 +230,22 @@ public class AiCheckMessage {
      * @return true 表示已执行处置（禁言或封禁）
      */
     public boolean notifyViolation(AbsSender sender, String groupId, String userId, Integer messageId, String text) {
-        boolean botTarget = isBotMember(sender, groupId, userId);
-        boolean punished = punishViolatorIfEnabled(sender, groupId, userId, botTarget);
+        return notifyViolation(sender, groupId, userId, messageId, text, null);
+    }
+
+    /**
+     * @param senderIsBot 消息自带的 {@code from.isBot}：非 null 时直接据此判断目标类型，不再回查群成员；
+     *                    null 时才回查（{@link #isBotMember}）。
+     */
+    public boolean notifyViolation(AbsSender sender, String groupId, String userId, Integer messageId, String text, Boolean senderIsBot) {
+        // 优先用消息自带的标志：GetChatMember 会因目标刚退群 / 网络抖动而失败，
+        // 失败时若直接放弃处置，真正还在群里的广告机器人就会漏封。
+        Boolean botTarget = senderIsBot != null ? senderIsBot : isBotMember(sender, groupId, userId);
+        // 仍查不到成员信息（系统账号 / 频道身份 / 已退群）时宁可不处置：
+        // 原实现把查询失败当成「普通用户」，实测把 Telegram 服务账号 777000 当成用户永久禁言，
+        // 并在群里发出「用户 Telegram 已被AI检测发送违规词…已永久禁言该用户」的通知。
+        // 注意：无论是否处置，违规消息都会被删除（见 ViolationNoticeAggregator#notifyViolation 第 1 步）。
+        boolean punished = botTarget != null && punishViolatorIfEnabled(sender, groupId, userId, botTarget);
         SendMessage notification = new SendMessage();
         notification.setChatId(groupId);
         String actionNote = "";
@@ -229,8 +268,13 @@ public class AiCheckMessage {
         return punished;
     }
 
-    /** 目标是否为机器人账号（查询失败时按普通用户处理，避免误封）。 */
-    private boolean isBotMember(AbsSender sender, String groupId, String userId) {
+    /**
+     * 目标是否为机器人账号。
+     *
+     * @return {@code null} 表示查询失败——通常说明该 ID 不是本群可查询的成员（系统账号、频道身份、已退群），
+     * 调用方据此跳过处置，而不是当成普通用户去禁言
+     */
+    private Boolean isBotMember(AbsSender sender, String groupId, String userId) {
         try {
             GetChatMember getChatMember = new GetChatMember();
             getChatMember.setChatId(groupId);
@@ -238,7 +282,17 @@ public class AiCheckMessage {
             ChatMember member = sender.execute(getChatMember);
             return member != null && member.getUser() != null && Boolean.TRUE.equals(member.getUser().getIsBot());
         } catch (Exception e) {
-            log.warn("查询目标是否为机器人失败，按普通用户处理。groupId={}, userId={}, err={}", groupId, userId, e.getMessage());
+            log.warn("查询目标群成员信息失败，本次不做处置。groupId={}, userId={}, err={}", groupId, userId, e.getMessage());
+            return null;
+        }
+    }
+
+    /** 管理员豁免：查询失败时按非管理员处理（继续检测），避免影响正常检测链路。 */
+    private boolean isGroupAdminQuietly(AbsSender sender, String groupId, String userId) {
+        try {
+            return checkUser.isGroupAdmin(sender, groupId, Long.parseLong(userId));
+        } catch (Exception e) {
+            log.warn("查询管理员列表失败，按普通成员处理。groupId={}, userId={}, err={}", groupId, userId, e.getMessage());
             return false;
         }
     }

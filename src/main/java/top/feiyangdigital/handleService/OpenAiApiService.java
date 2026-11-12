@@ -8,6 +8,7 @@ import com.unfbx.chatgpt.entity.chat.Message;
 import com.unfbx.chatgpt.entity.chat.ResponseFormat;
 import com.unfbx.chatgpt.interceptor.DynamicKeyOpenAiAuthInterceptor;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.OkHttpClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import top.feiyangdigital.entity.BaseInfo;
@@ -17,6 +18,7 @@ import javax.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -64,6 +66,11 @@ public class OpenAiApiService {
             "   - 典型例子：频道名为「代充值项目 每天保底500+」、简介写「长期稳定无风险，速度来人」，即使发言本身没有广告词，也应判定为垃圾广告；\n" +
             "   - 正常的游戏、资讯、个人博客类频道（不含上述特征）不应被判为广告。\n" +
             "15. **向群内管理机器人提问的排除项**：若输入内容里带有「其中的 @ 提及是在向本群管理机器人提问，不属于推广或引流」这类说明，说明其中的 @机器人 是用户向本群的管理/客服机器人提问或召唤，不是推广别人的机器人或服务；不得仅凭「@机器人 + 某个词」就判定为推广、引流或垃圾广告，必须结合剩余内容判断。\n" +
+            "16. **邀请链接指向的群**：若输入内容中出现「【简介中的邀请链接指向的群】」段落，说明该用户资料里的 t.me 邀请链接已解析出目标群（可能是私人群、资源群、也可能是刷单赌博群），请按下面规则判断：\n" +
+            "   - 群名或群简介出现刷单、代刷、垫付、押金、日结、佣金、招商、代理、招聘、公群、内部群、资源群、博彩、色情、币圈、投资保底、卖号卖卡、对接业务员等特征时，说明该链接是在把群成员导流到一个广告/黑灰产群，spamChance 给 8 分以上；\n" +
+            "   - 群名与群简介属于正常的兴趣、技术、动漫、资源分享、地区交流群，且资料其他部分没有引流话术时，不得因为出现邀请链接就判定为广告；\n" +
+            "   - 若只有 t.me 链接而未解析出群信息（没有该段落），链接本身不得作为扣分依据，因为正常用户也会分享自己的群；\n" +
+            "   - 群信息与用户资料的其他内容（例如头像、昵称、谐音话术）相互印证时，应合并作为引流证据。\n" +
             "以下是用户的发言内容：\n%s\n" +
             "请根据以上问题逐一判断，并以如下JSON格式返回结果：\n" +
             "{\n" +
@@ -121,23 +128,57 @@ public class OpenAiApiService {
         }
     }
 
+    /**
+     * OpenCode Go 网关要求的稳定会话 ID：SDK 默认不发 {@code x-opencode-session}，
+     * 缺失时网关直接返回 {@code MissingSessionID}。同一值可复用以便走 prompt 缓存。
+     */
+    private static final String OPENCODE_SESSION_ID = "ses_feiyangdigitalbot";
+
     private OpenAiClient createOpenAiClient() {
         List<String> list = BaseInfo.getOpenAIApiKey().toJavaList(String.class, JSONReader.Feature.SupportArrayToBean);
 
-        return OpenAiClient.builder()
+        OpenAiClient.Builder builder = OpenAiClient.builder()
                 .apiKey(list)
                 .authInterceptor(new DynamicKeyOpenAiAuthInterceptor())
-                .apiHost(BaseInfo.getOpenAiApiHost())
-                .build();
+                .apiHost(BaseInfo.getOpenAiApiHost());
+
+        // OpenCode Go 系接口（/inference/go/...）必须带 x-opencode-session，按量付费端点不带也能用
+        if (BaseInfo.getOpenAiApiHost().toLowerCase().contains("opencode.ai")) {
+            builder.okHttpClient(new OkHttpClient.Builder()
+                    .addInterceptor(chain -> chain.proceed(chain.request().newBuilder()
+                            .header("x-opencode-session", OPENCODE_SESSION_ID)
+                            .build()))
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .writeTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(60, TimeUnit.SECONDS)
+                    .build());
+        }
+        return builder.build();
     }
 
+    /** 群内发言检测的默认输入上限（保持原有行为）。 */
+    private static final int DEFAULT_ANALYZE_MAX_LENGTH = 200;
+
     public List<ChatChoice> getOpenAiAnalyzeResult(String text) {
+        return getOpenAiAnalyzeResult(text, DEFAULT_ANALYZE_MAX_LENGTH);
+    }
+
+    /**
+     * 指定输入截断长度的重载。
+     * <p>
+     * 群内发言检测沿用 200 字即可；昵称/简介/个人频道画像等「资料检测」内容更长，
+     * 固定 200 字会把判定依据整段切掉，需要由调用方传入更大的上限。
+     *
+     * @param text      待判定内容
+     * @param maxLength 送入模型的最大字符数
+     */
+    public List<ChatChoice> getOpenAiAnalyzeResult(String text, int maxLength) {
         final int MAX_RETRIES = 5;
         int attempt = 0;
 
         while (attempt < MAX_RETRIES) {
             try {
-                String content = String.format(ANALYSIS_TEMPLATE, truncateString(text, 200));
+                String content = String.format(ANALYSIS_TEMPLATE, truncateString(text, maxLength));
                 Message message = Message.builder().role(Message.Role.SYSTEM).content(content).build();
                 ChatCompletion chatCompletion = createChatCompletion(message);
                 List<ChatChoice> choices = createOpenAiClient().chatCompletion(chatCompletion).getChoices();
@@ -249,6 +290,12 @@ public class OpenAiApiService {
         if (input == null || input.length() <= maxLength) {
             return input;
         }
-        return input.substring(0, maxLength);
+        // 安全截断：不能把 emoji 等代理对切成半个字符，否则会产生孤立代理字符，
+        // 下游 JSON 序列化会得到非法 \uD83D 之类的残缺转义。
+        int end = maxLength;
+        if (end > 0 && Character.isHighSurrogate(input.charAt(end - 1))) {
+            end--;
+        }
+        return input.substring(0, end);
     }
 }

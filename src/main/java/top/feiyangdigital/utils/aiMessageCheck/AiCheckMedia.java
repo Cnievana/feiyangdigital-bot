@@ -45,6 +45,11 @@ public class AiCheckMedia {
     private AiCheckMessage aiCheckMessage;
 
     public void checkMedia(AbsSender sender, Update update) throws TelegramApiException {
+        // 系统 / 频道来源（关联频道自动转发的帖子、频道身份发言、Telegram 服务账号）不是用户发言：
+        // 既不该拿 777000 去查违规次数，也不该把频道帖子的图片当成用户发广告。
+        if (MessageSourceGuard.isSystemOrChannelMessage(update.getMessage())) {
+            return;
+        }
         String groupId = update.getMessage().getChatId().toString();
         String userId = update.getMessage().getFrom().getId().toString();
         Integer messageId = update.getMessage().getMessageId();
@@ -114,10 +119,12 @@ public class AiCheckMedia {
                             String text = String.format("用户 <b><a href=\"tg://user?id=%d\">%s</a></b> 已被AI检测发送违规媒体，直接删除！", Long.valueOf(userId), firstName);
                             String otherText = String.format("<b>违规用户UserID为：<a href=\"tg://user?id=%d\">%s</a></b>", Long.valueOf(userId), userId);
                             // 与文本广告一致：群开启「AI违规自动禁言」时命中即永久禁言
-                            aiCheckMessage.notifyViolation(sender, groupId, userId, messageId, text + "\n" + otherText);
+                            aiCheckMessage.notifyViolation(sender, groupId, userId, messageId, text + "\n" + otherText,
+                                    update.getMessage().getFrom().getIsBot());
                             botRecord1.setViolationcount(violationCount + 1);
                         } else if (StringUtils.hasText(realUpdateText)) {
-                            aiCheckMessage.contentAiOption(sender, groupId, userId, firstName, messageId, realUpdateText);
+                            aiCheckMessage.contentAiOption(sender, groupId, userId, firstName, messageId, realUpdateText,
+                                    false, update.getMessage().getFrom().getIsBot());
                             if (file != null) {
                                 file.delete();
                             }

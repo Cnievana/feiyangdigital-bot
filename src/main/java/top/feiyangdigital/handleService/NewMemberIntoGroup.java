@@ -29,6 +29,7 @@ import top.feiyangdigital.utils.aiMessageCheck.ViolationNoticeAggregator;
 import top.feiyangdigital.utils.groupCaptch.CaptchaManagerCacheMap;
 import top.feiyangdigital.utils.groupCaptch.GroupMessageIdCacheMap;
 import top.feiyangdigital.utils.groupCaptch.RestrictOrUnrestrictUser;
+import top.feiyangdigital.utils.userProfile.InviteLinkResolver;
 import top.feiyangdigital.utils.userProfile.UserChannelProfileService;
 
 import java.util.*;
@@ -69,8 +70,41 @@ public class NewMemberIntoGroup {
     @Autowired
     private UserChannelProfileService userChannelProfileService;
 
+    @Autowired
+    private InviteLinkResolver inviteLinkResolver;
+
     /** AI 判定为广告的阈值（与群内消息检测保持一致）。 */
     private static final int AI_SPAM_THRESHOLD = 6;
+
+    /**
+     * 资料检测（昵称/简介/个人频道/邀请链接预览）送入模型的最大字符数。
+     * <p>
+     * 群内发言检测仍是 200 字；但资料链路要容纳「上下文说明 + 昵称 + 简介 +
+     * 个人频道画像（名称 200 + 简介 500 + 置顶 300）+ 邀请链接群信息（约 500）」，
+     * 沿用 200 字会把判定依据整段切掉。
+     */
+    private static final int PROFILE_MAX_LENGTH = 2200;
+
+    /**
+     * 资料检测专用上下文说明：用于区分「自我防护的私聊入口」与「引流广告」。
+     * <p>
+     * 资料检测复用的是群内发言检测的模板，直接套用会产生三类误伤：
+     * 1. 简介里的「PM: @xxx_bot」私聊入口被判成模板第 3 条「诱导私信联系」；
+     * 2. 昵称里的装饰性 emoji / 旗帜 / 零宽字符被判成第 7 条「视觉混淆规避过滤」；
+     * 3. 资料阶段本就没有发言，却被判成第 10 条「发言过短无实质内容」。
+     * <p>
+     * 机制与模板第 15 条（「其中的 @ 提及是在向本群管理机器人提问」排除项）一致：
+     * 由输入内容自带上下文说明来纠偏。
+     */
+    private static final String PROFILE_CONTEXT_NOTE =
+            "【上下文说明】以下是该用户进群时的「资料」，不是群内发言，请不要以「有无实质发言内容」扣分。\n" +
+            "资料中若仅出现一个形如「PM: @xxx_bot」「私信请走 @xxx」「防广告 @xxx」的私聊入口声明，" +
+            "且不含任何收益承诺、货源接单、招商代理、频道推广、福利诱饵，应视为用户自我防护" +
+            "（避免被广告机器人私聊），不得判定为广告或引流。\n" +
+            "昵称中的装饰性 emoji、旗帜、零宽字符单独出现时，不计入规避过滤。\n" +
+            "t.me 链接本身不是广告依据：只有输入中出现了「【简介中的邀请链接指向的群】」段落时，" +
+            "才可以依据该段落里那个群的群名/成员数/简介来判断是否引流；未解析出群信息时不得因链接本身扣分。\n" +
+            "----\n";
 
 
     public void handleMessage(AbsSender sender, Update update, User outUser) throws TelegramApiException {
@@ -274,12 +308,17 @@ public class NewMemberIntoGroup {
         if (groupInfoWithBLOBs == null || !"open".equals(groupInfoService.selIntoGroupAiCheckFlag(chatId.toString()))) {
             return false;
         }
-        String content = "用户昵称：" + firstName + " " + (lastName == null ? "" : lastName)
+        // 先注入上下文说明，再拼资料本体：说明必须完整进入模型，不能被截断。
+        String inviteInfo = inviteLinkResolver.resolve(bio, channelProfile);
+        String content = PROFILE_CONTEXT_NOTE
+                + "用户昵称：" + firstName + " " + (lastName == null ? "" : lastName)
                 + "\n个人简介：" + (bio == null ? "（无）" : bio)
-                + (StringUtils.hasText(channelProfile) ? "\n" + channelProfile : "");
+                + (StringUtils.hasText(channelProfile) ? "\n" + channelProfile : "")
+                + (StringUtils.hasText(inviteInfo) ? "\n" + inviteInfo : "");
         List<ChatChoice> choices;
         try {
-            choices = openAiApiService.getOpenAiAnalyzeResult(content);
+            // 资料链路放宽到 PROFILE_MAX_LENGTH，避免个人频道画像被截掉。
+            choices = openAiApiService.getOpenAiAnalyzeResult(content, PROFILE_MAX_LENGTH);
         } catch (Exception e) {
             return false;
         }
@@ -299,6 +338,8 @@ public class NewMemberIntoGroup {
             return false;
         }
         String spamReason = result.getSpamReason();
+        // 命中留档：群里只展示原因摘要，日志保留分值便于复盘误伤（资料链路原本没有命中日志）
+        log.warn("AI进群检测命中 groupId={}, userId={}, spamChance={}, reason={}", chatId, userId, spamChance, spamReason);
         boolean restricted = restrictOrUnrestrictUser.restrictUser(sender, userId, chatId.toString(), 0L);
         if (restricted) {
             violationNoticeAggregator.markPunished(chatId.toString(), userId.toString());

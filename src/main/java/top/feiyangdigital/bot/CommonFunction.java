@@ -30,6 +30,7 @@ import top.feiyangdigital.utils.CheckUser;
 import top.feiyangdigital.utils.SendContent;
 import top.feiyangdigital.utils.aiMessageCheck.AiCheckMedia;
 import top.feiyangdigital.utils.aiMessageCheck.AiCheckMessage;
+import top.feiyangdigital.utils.aiMessageCheck.MessageSourceGuard;
 import top.feiyangdigital.utils.groupCaptch.*;
 import top.feiyangdigital.utils.ruleCacheMap.AddRuleCacheMap;
 import top.feiyangdigital.utils.ruleCacheMap.AiCsCacheMap;
@@ -243,6 +244,13 @@ public class CommonFunction {
                         if (update.getMessage().hasText()) {
                             checkTextMessage(sender, update);
                         }
+                        return;
+                    }
+                    // 系统 / 频道来源（关联频道自动转发 from=777000、频道身份发言 sender_chat、匿名管理员）
+                    // 不是「用户发言」：下游防刷、昵称检测、AI 检测全部按用户取 from（频道消息 from 可能为 null，直接 NPE），
+                    // AI 广告检测还会把群主自己的频道帖子判成营销广告并删帖。
+                    // 放在「非本频道的野马甲」规则之后，不影响那个功能。
+                    if (MessageSourceGuard.isSystemOrChannelMessage(update.getMessage())) {
                         return;
                     }
                     antiFloodService.checkFlood(sender, update);
